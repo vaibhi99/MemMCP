@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "memmcp"
+version = "0.1.0"
+description = "MemMCP — a cross-tool AI memory server built on the Model Context Protocol"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Vaibhav Kamboj" }]
+keywords = ["mcp", "model-context-protocol", "memory", "llm", "vector-search", "rag"]
+
+dependencies = [
+    "mcp>=1.2.0",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "numpy>=1.26",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+# Production-grade backends. The server works fully offline without these,
+# then transparently upgrades when a backend is installed + configured.
+chroma = ["chromadb>=0.5"]
+local-embed = ["sentence-transformers>=2.7"]
+openai = ["openai>=1.30"]
+anthropic = ["anthropic>=0.30"]
+full = [
+    "chromadb>=0.5",
+    "sentence-transformers>=2.7",
+    "openai>=1.30",
+    "anthropic>=0.30",
+]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
+
+[project.scripts]
+memmcp = "memmcp.server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

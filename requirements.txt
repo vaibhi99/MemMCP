@@ -1,0 +1,21 @@
+# ---- Core (required) ----
+mcp>=1.2.0                # Official Model Context Protocol SDK (FastMCP)
+pydantic>=2.6            # Data models & validation
+pydantic-settings>=2.2  # Env-driven configuration
+numpy>=1.26             # Vector math for the default embedded vector store
+python-dotenv>=1.0      # Load .env files
+
+# ---- Optional backends (auto-detected at runtime) ----
+# Install these to upgrade from the offline defaults to production-grade
+# embeddings / vector database / LLM extraction.
+#
+#   pip install "memmcp[full]"    # (see pyproject.toml extras)
+#
+# chromadb>=0.5          # Persistent vector database backend
+# sentence-transformers>=2.7  # Local high-quality embeddings
+# openai>=1.30           # OpenAI embeddings + LLM fact extraction
+# anthropic>=0.30        # Anthropic (Claude) LLM fact extraction
+
+# ---- Dev / test ----
+pytest>=8.0
+pytest-asyncio>=0.23

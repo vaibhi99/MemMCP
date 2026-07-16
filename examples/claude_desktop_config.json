@@ -1,0 +1,20 @@
+{
+  "//": "Claude Desktop MCP config. Copy the 'memmcp' block into your existing",
+  "//1": "claude_desktop_config.json (macOS: ~/Library/Application Support/Claude/,",
+  "//2": "Windows: %APPDATA%\\Claude\\). Restart Claude Desktop afterwards.",
+  "//3": "Replace <ABSOLUTE_PATH_TO_MemMCP> with this repo's absolute path.",
+  "mcpServers": {
+    "memmcp": {
+      "command": "python",
+      "args": ["-m", "memmcp.server"],
+      "env": {
+        "PYTHONPATH": "<ABSOLUTE_PATH_TO_MemMCP>/src",
+        "MEMMCP_DATA_DIR": "<ABSOLUTE_PATH_TO_MemMCP>/.memmcp_data",
+        "MEMMCP_EMBEDDING_PROVIDER": "hash",
+        "MEMMCP_VECTOR_BACKEND": "numpy",
+        "MEMMCP_EXTRACTION_PROVIDER": "rule",
+        "MEMMCP_PII_POLICY": "redact"
+      }
+    }
+  }
+}
