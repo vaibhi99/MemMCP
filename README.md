@@ -23,7 +23,6 @@ connected tool, automatically.
 | Problem with paste / flat file | What MemMCP does |
 | --- | --- |
 | Doesn't scale — which of hundreds of chats has the context? | Semantic **retrieval** surfaces the relevant slice, not the whole history |
-| Long pastes overflow the context window ("lost in the middle") | **Token-budgeted** packing returns the top few facts, not 50 pages |
 | Raw chat ≠ knowledge (dead ends, corrections) | **Fact extraction & distillation** into clean, self-contained facts |
 | One flat file cross-contaminates projects/tools | **Project/tool scoping** with a readable-ancestor hierarchy |
 | Contradictions pile up ("Postgres" then "MySQL") | **Conflict detection** supersedes stale beliefs by canonical key |
