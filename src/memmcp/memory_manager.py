@@ -304,18 +304,121 @@ class MemoryManager:
         self.audit.record("consolidate", actor=actor, details={"merged": merged})
         return merged
 
+    # ==================================================================
+    # Structured project knowledge
+    # ==================================================================
+    def get_project_context(
+        self,
+        *,
+        scope: str | None = None,
+        categories: list[str] | None = None,
+        detail_level: str = "full",
+        actor: str = "unknown",
+    ) -> dict[str, Any]:
+        """Return a structured project snapshot grouped by entity category.
+
+        Unlike ``recall`` (which returns a flat ranked list), this method
+        organises memories into semantic groups (project info, modules,
+        workflows, decisions, domain terms, status) so a client can inject
+        a complete project model at session start.
+
+        Args:
+            scope: Namespace to search (sees ancestors + global).
+            categories: Optional filter — only include these categories.
+                Valid: identity, stack, project, module, workflow, decision,
+                       domain, status.  ``None`` means all.
+            detail_level: ``"full"`` (all content) or ``"summary"`` (first
+                sentence only, for lightweight context injection).
+            actor: Calling tool name (for audit).
+        """
+        from .models import CATEGORIES, _category_from_key
+
+        scopes = scoping.readable_scopes(scope)
+        active = [
+            m for m in self.store.all(scopes=scopes, include_inactive=False)
+        ]
+
+        # Group by category.
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for mem in sorted(active, key=lambda m: m.importance, reverse=True):
+            cat = _category_from_key(mem.key)
+            if cat is None:
+                cat = "other"
+            if categories and cat not in categories:
+                continue
+
+            content = mem.content
+            if detail_level == "summary":
+                # First sentence only.
+                content = content.split(".")[0] + "." if "." in content else content
+
+            entry: dict[str, Any] = {
+                "content": content,
+                "key": mem.key,
+                "importance": round(mem.importance, 3),
+            }
+            grouped.setdefault(cat, []).append(entry)
+
+        # Build the structured output.
+        result: dict[str, Any] = {"scope": scoping.normalize(scope)}
+        for cat_key in CATEGORIES:
+            if categories and cat_key not in categories:
+                continue
+            items = grouped.get(cat_key, [])
+            if items:
+                result[cat_key] = items
+        # Include uncategorised facts.
+        if "other" in grouped and (not categories or "other" in categories):
+            result["other"] = grouped["other"]
+
+        self.audit.record(
+            "project_context", actor=actor,
+            scope=scoping.normalize(scope),
+            details={"categories": list(result.keys()), "total_facts": sum(
+                len(v) for v in result.values() if isinstance(v, list)
+            )},
+        )
+        return result
+
+    def ingest_codebase(
+        self,
+        summary: str,
+        *,
+        project_name: str | None = None,
+        source: str = "codebase_scan",
+        actor: str = "unknown",
+    ) -> IngestResult:
+        """Bootstrap project memory from a codebase description.
+
+        Like ``ingest()`` but sets the scope to the project and uses a higher
+        default importance since codebase descriptions are authoritative.
+
+        Args:
+            summary: High-level description of the codebase (what it is, its
+                modules, architecture, etc.).
+            project_name: Optional project name for scoping.
+            source: Provenance label.
+            actor: Calling tool name.
+        """
+        scope = scoping.make(project=project_name) if project_name else "global"
+        return self.ingest(summary, scope=scope, source=source, actor=actor)
+
     def stats(self) -> dict[str, Any]:
         all_mems = self.store.all(include_inactive=True)
         active = [m for m in all_mems if m.is_active]
         by_scope: dict[str, int] = {}
+        by_category: dict[str, int] = {}
         for m in active:
             by_scope[m.scope] = by_scope.get(m.scope, 0) + 1
+            cat = m.category or "other"
+            by_category[cat] = by_category.get(cat, 0) + 1
         return {
             "total": len(all_mems),
             "active": len(active),
             "inactive": len(all_mems) - len(active),
             "with_pii": sum(1 for m in active if m.pii_types),
             "by_scope": by_scope,
+            "by_category": by_category,
             "embedding_provider": self.settings.embedding_provider,
             "embedding_dim": self.embedder.dim,
             "vector_backend": self.settings.vector_backend,

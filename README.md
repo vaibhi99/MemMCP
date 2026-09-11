@@ -1,17 +1,17 @@
-# MemMCP — Cross-Tool AI Memory Server
+# MemMCP — Cross-Tool Project Context & Memory Server
 
 **A persistent, shared, _selective_ memory layer for LLM clients (Claude, Cursor,
 ChatGPT, IDEs), built on the [Model Context Protocol](https://modelcontextprotocol.io).**
 
 LLMs forget everything between sessions and across tools, so you keep
-re-explaining your stack, your preferences, and your project. Pasting old chats
-does not scale — it overflows the context window, replays your mistakes, leaks
-secrets, and goes stale the moment a decision changes.
+re-explaining your stack, your project architecture, your workflows, and your 
+decisions. Pasting old chats does not scale — it overflows the context window, 
+replays your mistakes, leaks secrets, and goes stale the moment a decision changes.
 
 MemMCP is the **brain on top of storage**: it extracts durable facts from noisy
-conversations, deduplicates them, resolves conflicts as beliefs change, and
-surfaces only the handful of relevant facts for the current task — to every
-connected tool, automatically.
+conversations (like architecture, module responsibilities, workflows, decisions, and stack choices), deduplicates them, 
+resolves conflicts as beliefs change, and surfaces only the handful of relevant 
+facts for the current task — to every connected tool, automatically.
 
 > Storing text is the easy 10%. MemMCP does the hard 90%:
 > **extract → dedupe → index → retrieve-the-right-bit → resolve conflicts → expire.**
@@ -24,9 +24,9 @@ connected tool, automatically.
 | --- | --- |
 | Doesn't scale — which of hundreds of chats has the context? | Semantic **retrieval** surfaces the relevant slice, not the whole history |
 | Long pastes overflow the context window ("lost in the middle") | **Token-budgeted** packing returns the top few facts, not 50 pages |
-| Raw chat ≠ knowledge (dead ends, corrections) | **Fact extraction & distillation** into clean, self-contained facts |
+| Raw chat ≠ knowledge (dead ends, corrections) | **Fact extraction & distillation** into clean, self-contained project facts |
 | One flat file cross-contaminates projects/tools | **Project/tool scoping** with a readable-ancestor hierarchy |
-| Contradictions pile up ("Postgres" then "MySQL") | **Conflict detection** supersedes stale beliefs by canonical key |
+| Contradictions pile up ("React" then "Vue", "AWS" then "GCP") | **Conflict detection** supersedes stale beliefs by canonical key |
 | Facts rot; nothing expires | **TTL / staleness** handling keeps memory current |
 | Blind pastes leak secrets/PII | **PII-aware filtering** + append-only **audit log** |
 
@@ -113,6 +113,8 @@ Cursor and other MCP clients use the same command/args/env shape.
 | --- | --- |
 | `remember` | Store one durable fact (with scope, importance, conflict key, TTL) |
 | `ingest_conversation` | Distill a raw transcript into clean, deduplicated facts |
+| `ingest_codebase_summary` | Bootstrap memory from a high-level codebase description |
+| `get_project_context` | Retrieve a structured snapshot of the whole project (grouped by category) |
 | `recall` | Retrieve the top relevant facts for a query, within a token budget |
 | `list_memories` | List active (or superseded/expired) memories in a scope |
 | `update_memory` | Edit a fact in place (re-embeds on content change) |
@@ -120,6 +122,23 @@ Cursor and other MCP clients use the same command/args/env shape.
 | `consolidate` | Merge near-duplicate facts in a scope |
 
 Resources: `memmcp://stats` (memory + config) and `memmcp://audit` (recent events).
+
+---
+
+## Semantic Project Knowledge Engine
+
+When using the `openai` or `anthropic` extraction providers, MemMCP acts as a comprehensive project knowledge engine. It understands 8 entity categories:
+
+- **Identity**: Who the user/team is.
+- **Stack**: Tech choices (languages, frameworks, databases).
+- **Project**: High-level context (purpose, architecture, deployment).
+- **Modules**: Component boundaries and responsibilities.
+- **Workflows**: How things flow (CI/CD, data pipelines).
+- **Decisions**: Architectural decisions (ADRs) and why they were made.
+- **Domain**: Project-specific terminology.
+- **Status**: Current state of work and known technical debt.
+
+You can bootstrap this by calling `ingest_codebase_summary` with a high-level description of your project. Then, at the start of any session, clients can call `get_project_context` to instantly inject a structured, categorical model of the entire project.
 
 ---
 

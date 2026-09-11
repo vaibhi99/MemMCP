@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # ---- Fact extraction ----
     extraction_provider: ExtractionProvider = "rule"
     extraction_model: str = "gpt-4o-mini"
+    extraction_temperature: float = 0.0
+    extraction_max_tokens: int = 2048
 
     # ---- Retrieval ranking ----
     weight_relevance: float = 0.60

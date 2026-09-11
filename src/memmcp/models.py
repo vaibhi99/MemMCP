@@ -14,12 +14,62 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
+
+# ---------------------------------------------------------------------------
+# Entity categories — the ontology that turns flat facts into structured
+# project knowledge.  A memory's ``key`` prefix maps to one of these.
+# ---------------------------------------------------------------------------
+CATEGORIES: dict[str, str] = {
+    "identity": "Who the user/team is (name, role, company)",
+    "stack": "Technology choices (languages, frameworks, databases, cloud)",
+    "project": "High-level project info (purpose, architecture, deployment)",
+    "module": "Component/module responsibilities and boundaries",
+    "workflow": "How things flow (CI/CD, data pipelines, deployment steps)",
+    "decision": "Architectural decisions and the reasoning behind them (ADRs)",
+    "domain": "Project-specific terminology, concepts, and domain language",
+    "status": "Current state of work, milestones, and known technical debt",
+}
+
+# Maps key prefixes to category names for the Memory.category property.
+_KEY_TO_CATEGORY: dict[str, str] = {
+    "user:name": "identity", "user:email": "identity", "user:company": "identity",
+    "user:team": "identity", "user:role": "identity",
+    "user:language": "stack", "user:framework": "stack", "user:database": "stack",
+    "user:cache": "stack", "user:cloud": "stack", "user:editor": "stack",
+    "user:os": "stack", "user:testing": "stack", "user:ci_cd": "stack",
+    "user:auth": "stack", "user:styling": "stack",
+    "user:current_project": "project",
+    "project:purpose": "project", "project:architecture": "project",
+    "project:deployment": "project",
+    "project:status": "status",
+}
+_KEY_PREFIX_TO_CATEGORY: dict[str, str] = {
+    "project:module:": "module",
+    "project:workflow:": "workflow",
+    "project:decision:": "decision",
+    "project:domain:": "domain",
+    "project:debt:": "status",
+}
+
+
 def _now() -> float:
     return time.time()
 
 
 def _new_id() -> str:
     return uuid.uuid4().hex
+
+
+def _category_from_key(key: str | None) -> str | None:
+    """Derive the entity category from a memory's conflict key."""
+    if not key:
+        return None
+    if key in _KEY_TO_CATEGORY:
+        return _KEY_TO_CATEGORY[key]
+    for prefix, cat in _KEY_PREFIX_TO_CATEGORY.items():
+        if key.startswith(prefix):
+            return cat
+    return None
 
 
 @dataclass
@@ -63,6 +113,11 @@ class Memory:
     embedding: list[float] | None = None
 
     # -- derived helpers -------------------------------------------------
+    @property
+    def category(self) -> str | None:
+        """Entity category derived from the conflict key (read-only)."""
+        return _category_from_key(self.key)
+
     @property
     def age_days(self) -> float:
         return max(0.0, (_now() - self.created_at) / 86_400.0)
@@ -120,6 +175,7 @@ class Memory:
             "scope": self.scope,
             "importance": round(self.importance, 3),
             "key": self.key,
+            "category": self.category,
             "tags": self.tags,
             "source": self.source,
             "age_days": round(self.age_days, 2),

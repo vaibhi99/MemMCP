@@ -67,6 +67,7 @@ class Distiller:
                 return DistillDecision("merge", [mem], 1.0, "identical content")
             if sim >= self.dedup_threshold and sim > best_sim:
                 best_mem, best_sim = mem, sim
+                
         if best_mem is not None:
             return DistillDecision("merge", [best_mem], best_sim, "near-duplicate")
 

@@ -127,6 +127,78 @@ def recall(
 
 
 # ==========================================================================
+# Structured project knowledge tools
+# ==========================================================================
+@mcp.tool()
+def get_project_context(
+    scope: str = "global",
+    categories: list[str] | None = None,
+    detail_level: str = "full",
+    tool: str = "unknown",
+) -> dict[str, Any]:
+    """Get a structured snapshot of everything known about the project.
+
+    Call this at the START of a session to load the full project model into
+    your context — purpose, architecture, modules, workflows, decisions,
+    domain terms, and status — grouped by category. Much richer than ``recall``
+    which returns a flat ranked list for a specific query.
+
+    Args:
+        scope: Namespace to search (sees this scope, its ancestors, and global).
+        categories: Optional filter — only include specific categories.
+            Valid values: "identity", "stack", "project", "module", "workflow",
+            "decision", "domain", "status". Pass null/omit for all categories.
+        detail_level: "full" (complete content) or "summary" (first sentence
+            only, for lightweight injection when context is tight).
+        tool: Calling tool name (for audit).
+
+    Returns a dict keyed by category, each containing a list of facts with
+    their content, key, and importance. Only non-empty categories appear.
+    """
+    return _manager.get_project_context(
+        scope=scope, categories=categories,
+        detail_level=detail_level, actor=tool,
+    )
+
+
+@mcp.tool()
+def ingest_codebase_summary(
+    summary: str,
+    project_name: str | None = None,
+    scope: str | None = None,
+    tool: str = "unknown",
+) -> dict[str, Any]:
+    """Bootstrap project memory from a high-level codebase description.
+
+    Pass a description of the project — what it does, its architecture, the
+    main modules and their responsibilities, key decisions, deployment setup,
+    domain terminology. MemMCP will extract structured facts and store them.
+
+    Ideal for onboarding: describe your project once, and every future session
+    (across all connected tools) will already have the context.
+
+    Args:
+        summary: A description of the codebase/project. Can be multi-paragraph.
+            Include as much detail as useful: what the project is, its modules,
+            architecture, tech stack, deployment, key decisions, domain terms.
+        project_name: Optional project name (used for scoping, e.g. "acme").
+        scope: Explicit scope override. If omitted, auto-derived from
+            project_name (e.g. "project:acme") or defaults to "global".
+        tool: Calling tool name (for audit + provenance).
+
+    Returns counts of extracted/created/merged/superseded facts.
+    """
+    if scope:
+        from . import scoping
+        result = _manager.ingest(summary, scope=scope, source="codebase_scan", actor=tool)
+    else:
+        result = _manager.ingest_codebase(
+            summary, project_name=project_name, source="codebase_scan", actor=tool,
+        )
+    return result.summary()
+
+
+# ==========================================================================
 # Management tools
 # ==========================================================================
 @mcp.tool()
