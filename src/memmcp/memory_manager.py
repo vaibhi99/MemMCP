@@ -33,7 +33,7 @@ class MemoryManager:
         self.settings.ensure_dirs()
 
         self.embedder = build_embedder(self.settings)
-        self.store = build_store(self.settings)
+        self.store = build_store(self.settings) 
         self.ranker = Ranker(
             weights=self.settings.ranking_weights(),
             recency_halflife_days=self.settings.recency_halflife_days,

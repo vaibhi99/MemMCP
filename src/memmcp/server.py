@@ -38,18 +38,57 @@ def remember(
 ) -> dict[str, Any]:
     """Store ONE durable fact about the user or project for future recall.
 
-    Use this whenever you learn something worth remembering across sessions and
-    tools (a preference, a decision, an identity detail, a constraint). Save a
-    concise, self-contained fact — not a whole transcript.
+    ## When to use this tool
+    Use `remember` when you identify **1 to 3 clear, distinct facts** during a
+    conversation — a preference, a tech-stack choice, an architectural decision,
+    an identity detail, a constraint, a workflow step, or a domain term.
+
+    Call it in real time as the conversation progresses. You do NOT need to wait
+    for the user to explicitly ask you to save something. If the user confirms
+    a plan you proposed (e.g. "ok, let's go with that"), save the key decisions
+    from your proposal immediately.
+
+    ## When NOT to use this tool
+    If you just generated (or the user pasted) a dense block of text containing
+    **many facts** (architecture docs, meeting notes, large plans), use
+    `ingest_conversation` instead — it extracts and deduplicates automatically.
+    Rule of thumb: if you would need more than ~3 remember calls, prefer ingest.
+
+    ## What to save (not just tech stack!)
+    Save ALL categories of durable knowledge:
+    - **Identity**: user name, role, company, team
+    - **Stack**: language, framework, database, cache, cloud, editor, CI/CD
+    - **Architecture**: project purpose, system design, deployment target
+    - **Modules**: component names, responsibilities, boundaries, dependencies
+    - **Workflows**: CI/CD pipelines, data flows, deployment steps
+    - **Decisions**: architectural choices and the reasoning behind them
+    - **Domain terms**: project-specific jargon and definitions
+    - **Status**: current milestones, blockers, known tech debt
+
+    ## How to write a good fact
+    Write a concise, **third-person, present-tense, self-contained** sentence.
+    Good:  "Project uses PostgreSQL as primary database."
+    Bad:   "they said postgres" (not self-contained, ambiguous)
 
     Args:
-        content: The fact, e.g. "User prefers TypeScript and dislikes ORMs".
+        content: The fact, e.g. "Project uses PostgreSQL as primary database."
         scope: Namespace. "global", "project:<name>", "tool:<name>", or
             "project:<name>/tool:<name>". Facts are visible to that scope and
             its descendants.
-        importance: 0..1 estimate of long-term value (identity/decisions high).
+        importance: 0..1 estimate of long-term value.
+            - 0.85–0.95: identity, architecture, core decisions
+            - 0.75–0.85: module descriptions, workflows
+            - 0.70–0.80: stack choices
+            - 0.65–0.80: domain terms, status
+            - 0.50–0.65: preferences, dislikes
+            - 0.40–0.50: ephemeral observations
         key: Optional conflict slot (e.g. "user:database"). A new fact with the
             same key supersedes the old one, so beliefs stay current.
+            Common keys: user:name, user:language, user:framework, user:database,
+            user:cloud, user:editor, user:current_project, project:architecture,
+            project:deployment, project:purpose, project:status.
+            For modules/workflows/decisions use dynamic keys like
+            project:module:<name>, project:workflow:<name>, project:decision:<name>.
         tags: Optional labels for filtering.
         ttl_days: Optional expiry in days for facts that go stale on their own.
         tool: Name of the calling tool (recorded for audit).
@@ -71,14 +110,28 @@ def ingest_conversation(
     scope: str = "global",
     tool: str = "unknown",
 ) -> dict[str, Any]:
-    """Distill a raw conversation into clean facts and store them.
+    """Distill a raw conversation or dense text into clean facts and store them.
 
-    Pass a transcript (or a summary of one). MemMCP extracts durable facts,
-    drops noise/dead-ends, deduplicates against existing memory, and supersedes
-    any contradicted beliefs. Prefer this over pasting whole chats around.
+    ## When to use this tool
+    Use this when a large block of text needs to be turned into memory:
+    - The user pastes a **meeting transcript, chat log, or design doc**.
+    - You just generated a **dense response** (e.g. a full architecture plan,
+      a multi-module breakdown, a deployment strategy) that contains many facts
+      worth remembering. Pass your own response text into this tool.
+    - The user asks you to "remember this" or "save this" about a big block.
+    - Rule of thumb: if the text contains **more than ~3 distinct facts**, use
+      this tool instead of calling `remember` many times.
+
+    ## What happens internally
+    MemMCP's backend uses a dedicated extraction LLM to read the full text
+    (both user and assistant turns), extract only the durable conclusions,
+    standardise them into clean facts with conflict keys, and deduplicate
+    against existing memory. Dead ends, chit-chat, and corrected mistakes are
+    discarded automatically.
 
     Args:
-        conversation: The raw text to distill.
+        conversation: The raw text to distill — can be a chat transcript, your
+            own generated response, meeting notes, or any unstructured text.
         scope: Namespace to store the resulting facts in (see `remember`).
         tool: Calling tool name (for audit + provenance).
 
