@@ -16,7 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 EmbeddingProvider = Literal["hash", "sentence-transformers", "openai"]
 VectorBackend = Literal["numpy", "chroma"]
-ExtractionProvider = Literal["rule", "openai", "anthropic"]
+ExtractionProvider = Literal["openai", "anthropic"]
 PIIPolicy = Literal["block", "redact", "flag", "off"]
 
 
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     vector_backend: VectorBackend = "numpy"
 
     # ---- Fact extraction ----
-    extraction_provider: ExtractionProvider = "rule"
+    extraction_provider: ExtractionProvider = "openai"
     extraction_model: str = "gpt-4o-mini"
     extraction_temperature: float = 0.0
     extraction_max_tokens: int = 2048

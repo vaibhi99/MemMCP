@@ -2,11 +2,6 @@
 
 Two providers share one interface:
 
-* :class:`RuleExtractor` (default, offline) — pattern-based extraction of
-  first-person statements about identity, stack choices, preferences and
-  dislikes, plus a small domain taxonomy that assigns a *conflict key* (e.g.
-  "uses Postgres" and "uses MySQL" both map to ``user:database`` so the later
-  one can supersede the earlier).
 * LLM extractors (:func:`build_extractor` returns these when configured) —
   prompt an OpenAI/Anthropic model with a JSON-validated template.  These are
   the **recommended production path** — they extract architecture, modules,
@@ -39,173 +34,6 @@ class ExtractedFact:
     tags: list[str] = field(default_factory=list)
 
 
-# --------------------------------------------------------------------------
-# Domain taxonomy: maps a keyword to a canonical conflict key. Two facts that
-# resolve to the same key are competing statements about the same slot, so a
-# newer one supersedes the older (staleness handling).
-# --------------------------------------------------------------------------
-_TAXONOMY: dict[str, set[str]] = {
-    "user:database": {
-        "postgres", "postgresql", "mysql", "mongodb", "mongo", "sqlite",
-        "cassandra", "dynamodb", "cosmosdb", "mariadb", "oracle",
-    },
-    "user:cache": {
-        "redis", "memcached", "valkey",
-    },
-    "user:language": {
-        "python", "go", "golang", "rust", "typescript", "javascript", "java",
-        "c#", "csharp", "c++", "ruby", "php", "kotlin", "swift", "scala",
-    },
-    "user:framework": {
-        "react", "vue", "angular", "svelte", "django", "flask", "fastapi",
-        "express", "nextjs", "next.js", "spring", "rails", "laravel",
-    },
-    "user:cloud": {"aws", "azure", "gcp", "vercel", "netlify", "heroku", "cloudflare"},
-    "user:editor": {"vscode", "cursor", "vim", "neovim", "emacs", "intellij", "sublime"},
-    "user:os": {"windows", "macos", "mac", "linux", "ubuntu", "fedora", "wsl"},
-}
-
-
-def _category_for(text: str) -> str | None:
-    tokens = set(re.findall(r"[a-z0-9#.+]+", text.lower()))
-    for category, keywords in _TAXONOMY.items():
-        if tokens & keywords:
-            return category
-    return None
-
-
-class RuleExtractor:
-    """Offline, deterministic pattern-based extractor."""
-
-    # (regex, verb-normalisation, importance, optional-key-prefix)
-    _USE_RE = re.compile(
-        r"\b(i|we)\s+(?:am\s+|are\s+)?"
-        r"(use|uses|used|using|prefer|prefers|chose|choose|chosen|"
-        r"switched\s+to|moved\s+to|migrated\s+to|adopted|standardized\s+on)\s+"
-        r"(.+)",
-        re.IGNORECASE,
-    )
-    _DISLIKE_RE = re.compile(
-        r"\b(i|we)\s+(hate|hates|dislike|dislikes|avoid|avoids|"
-        r"don'?t\s+like|do\s+not\s+like|can'?t\s+stand)\s+(.+)",
-        re.IGNORECASE,
-    )
-    _IDENTITY_RE = re.compile(
-        r"\bmy\s+(name|email|company|team|role|title)\s+is\s+(.+)",
-        re.IGNORECASE,
-    )
-    _WORKING_RE = re.compile(
-        r"\b(i'?m|i\s+am|we'?re|we\s+are)\s+(working\s+on|building|developing|"
-        r"designing|maintaining)\s+(.+)",
-        re.IGNORECASE,
-    )
-
-    def extract(self, conversation: str | list[dict]) -> list[ExtractedFact]:
-        facts: list[ExtractedFact] = []
-        seen: set[str] = set()
-        for sentence in self._sentences(conversation):
-            for fact in self._match(sentence):
-                norm = fact.content.strip().lower()
-                if norm and norm not in seen:
-                    seen.add(norm)
-                    facts.append(fact)
-        return facts
-
-    # -- helpers ---------------------------------------------------------
-    @staticmethod
-    def _sentences(conversation: str | list[dict]) -> list[str]:
-        """Flatten a conversation into user-authored sentences.
-
-        Only user/human turns are mined so we never memorise the assistant's
-        speculation as if it were fact.
-        """
-        text_parts: list[str] = []
-        if isinstance(conversation, list):
-            for turn in conversation:
-                role = str(turn.get("role", "user")).lower()
-                if role in {"user", "human"}:
-                    text_parts.append(str(turn.get("content", "")))
-        else:
-            text_parts.append(str(conversation))
-        blob = "\n".join(text_parts)
-        # Split on sentence terminators and newlines.
-        raw = re.split(r"(?<=[.!?])\s+|\n+", blob)
-        return [s.strip() for s in raw if s.strip()]
-
-    @staticmethod
-    def _clean_object(obj: str) -> str:
-        obj = obj.strip().rstrip(".!?,;")
-        # Drop trailing subordinate clauses for a tighter fact.
-        obj = re.split(r"\s+\b(because|since|so|but|and then)\b", obj)[0]
-        return obj.strip()
-
-    def _match(self, sentence: str) -> list[ExtractedFact]:
-        out: list[ExtractedFact] = []
-
-        m = self._IDENTITY_RE.search(sentence)
-        if m:
-            attr, value = m.group(1).lower(), self._clean_object(m.group(2))
-            out.append(
-                ExtractedFact(
-                    content=f"User's {attr} is {value}.",
-                    importance=0.9,
-                    key=f"user:{attr}",
-                    tags=["identity"],
-                )
-            )
-
-        m = self._USE_RE.search(sentence)
-        if m:
-            subject = "Team" if m.group(1).lower() == "we" else "User"
-            obj = self._clean_object(m.group(3))
-            verb = re.sub(r"\s+", " ", m.group(2).lower())
-            verb = {
-                "use": "uses", "uses": "uses", "used": "uses", "using": "uses",
-                "prefer": "prefers", "prefers": "prefers",
-                "choose": "chose", "chose": "chose", "chosen": "chose",
-                "adopted": "adopted", "standardized on": "standardized on",
-                "switched to": "switched to", "moved to": "moved to",
-                "migrated to": "migrated to",
-            }.get(verb, verb)
-            category = _category_for(obj)
-            out.append(
-                ExtractedFact(
-                    content=f"{subject} {verb} {obj}.",
-                    importance=0.7,
-                    key=category,
-                    tags=["stack"] + ([category.split(":")[1]] if category else []),
-                )
-            )
-
-        m = self._DISLIKE_RE.search(sentence)
-        if m:
-            subject = "Team" if m.group(1).lower() == "we" else "User"
-            obj = self._clean_object(m.group(3))
-            category = _category_for(obj)
-            key = f"dislike:{category}" if category else None
-            out.append(
-                ExtractedFact(
-                    content=f"{subject} dislikes {obj}.",
-                    importance=0.6,
-                    key=key,
-                    tags=["preference", "dislike"],
-                )
-            )
-
-        m = self._WORKING_RE.search(sentence)
-        if m:
-            subject = "Team" if m.group(1).lower().startswith("we") else "User"
-            obj = self._clean_object(m.group(3))
-            out.append(
-                ExtractedFact(
-                    content=f"{subject} is working on {obj}.",
-                    importance=0.65,
-                    key="user:current_project",
-                    tags=["project"],
-                )
-            )
-
-        return out
 
 
 # --------------------------------------------------------------------------
@@ -519,13 +347,10 @@ def _conversation_to_text(conversation: str | list[dict]) -> str:
 
 
 def build_extractor(settings: Settings):
-    """Build the configured extractor, falling back to the rule extractor."""
+    """Build the configured extractor."""
     provider = settings.extraction_provider
-    try:
-        if provider == "openai":
-            return OpenAIExtractor(settings.extraction_model, settings.openai_api_key, settings)
-        if provider == "anthropic":
-            return AnthropicExtractor(settings.extraction_model, settings.anthropic_api_key, settings)
-    except ImportError as exc:
-        logger.warning("Extraction provider %r unavailable (%s); using rules.", provider, exc)
-    return RuleExtractor()
+    if provider == "openai":
+        return OpenAIExtractor(settings.extraction_model, settings.openai_api_key, settings)
+    if provider == "anthropic":
+        return AnthropicExtractor(settings.extraction_model, settings.anthropic_api_key, settings)
+    raise ValueError(f"Unknown extraction provider: {provider}")
