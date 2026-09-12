@@ -24,7 +24,7 @@ facts for the current task — to every connected tool, automatically.
 | --- | --- |
 | Doesn't scale — which of hundreds of chats has the context? | Semantic **retrieval** surfaces the relevant slice, not the whole history |
 | Long pastes overflow the context window ("lost in the middle") | **Token-budgeted** packing returns the top few facts, not 50 pages |
-| Raw chat ≠ knowledge (dead ends, corrections) | **Fact extraction & distillation** into clean, self-contained project facts |
+| Raw chat ≠ knowledge (dead ends, corrections) | **Fact extraction & distillation** into clean, self-contained facts |
 | One flat file cross-contaminates projects/tools | **Project/tool scoping** with a readable-ancestor hierarchy |
 | Contradictions pile up ("React" then "Vue", "AWS" then "GCP") | **Conflict detection** supersedes stale beliefs by canonical key |
 | Facts rot; nothing expires | **TTL / staleness** handling keeps memory current |

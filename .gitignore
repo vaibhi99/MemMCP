@@ -8,6 +8,7 @@ dist/
 .venv/
 venv/
 env/
+.src/memmcp.egg-info
 
 # MemMCP runtime data
 .memmcp_data/
