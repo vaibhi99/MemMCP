@@ -9,15 +9,25 @@ decides one of:
 * **supersede** — a competing statement about the same slot exists (same
   conflict ``key``); mark the old belief stale and store the new one.
 
-This is what separates "a pile of text" from memory: it stays deduplicated and
-current as beliefs change over time.
+When a candidate falls into the similarity grey zone
+(``conflict_threshold <= sim < dedup_threshold``), the distiller delegates
+the contradiction-vs-compatibility decision to an optional
+:class:`~memmcp.extraction.conflict_judge.ConflictJudge` (LLM-backed).
+If no judge is configured, the system falls through to "create" (safe default).
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from ..models import Memory
+
+if TYPE_CHECKING:
+    from .conflict_judge import ConflictJudge
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -35,9 +45,15 @@ def _norm(text: str) -> str:
 class Distiller:
     """Pure decision logic; the manager applies the resulting mutations."""
 
-    def __init__(self, dedup_threshold: float, conflict_threshold: float) -> None:
+    def __init__(
+        self,
+        dedup_threshold: float,
+        conflict_threshold: float,
+        judge: ConflictJudge | None = None,
+    ) -> None:
         self.dedup_threshold = dedup_threshold
         self.conflict_threshold = conflict_threshold
+        self.judge = judge
 
     def decide(
         self,
@@ -86,15 +102,33 @@ class Distiller:
                     f"new value for slot '{new_memory.key}'",
                 )
 
-        # 4) No key, but very similar to a conflicting statement -> supersede.
-        #    (Catches contradictions the taxonomy did not key.)
-        for mem, sim in similar:
-            if (
-                self.conflict_threshold <= sim < self.dedup_threshold
-                and mem.key
-                and mem.key == new_memory.key
-            ):
-                return DistillDecision("supersede", [mem], sim, "semantic conflict")
+        # 4) Ambiguity zone: conflict_threshold <= sim < dedup_threshold.
+        #    Delegate to the LLM judge if available.
+        zone_candidates = [
+            (mem, sim)
+            for mem, sim in similar
+            if self.conflict_threshold <= sim < self.dedup_threshold
+        ]
+        if zone_candidates and self.judge is not None:
+            # Only evaluate the single closest candidate — keeps LLM calls
+            # to at most 1 per distill operation.
+            closest_mem, closest_sim = max(zone_candidates, key=lambda t: t[1])
+            result = self.judge.judge(
+                existing_fact=closest_mem.content,
+                new_fact=new_memory.content,
+            )
+            logger.info(
+                "LLM judge: %s (sim=%.3f) — %s",
+                result.verdict, closest_sim, result.reason,
+            )
+            if result.verdict == "CONTRADICTION":
+                return DistillDecision(
+                    "supersede",
+                    [closest_mem],
+                    closest_sim,
+                    f"llm_judge: {result.reason}",
+                )
+            # COMPATIBLE → fall through to create.
 
         return DistillDecision("create", [], best_sim, "novel information")
 

@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     dedup_threshold: float = 0.92
     conflict_threshold: float = 0.60
 
+    # ---- LLM Conflict Judge ----
+    judge_enabled: bool = True
+    judge_model: str = "gpt-4o-mini"
+
     # ---- Privacy ----
     pii_policy: PIIPolicy = "redact"
 

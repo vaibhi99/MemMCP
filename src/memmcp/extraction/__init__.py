@@ -9,9 +9,20 @@ memory set clean over time:
   LLM-based when configured).
 * :class:`Distiller` — dedup near-identical facts and detect conflicts so
   updated beliefs ("moved to Go") supersede stale ones ("uses Postgres").
+* :class:`ConflictJudge` — LLM-backed judge for the ambiguity zone where
+  cosine similarity alone cannot distinguish contradiction from compatibility.
 """
 
+from .conflict_judge import ConflictJudge, JudgeResult
 from .distiller import Distiller, DistillDecision
 from .fact_extractor import ExtractedFact, build_extractor
 
-__all__ = ["Distiller", "DistillDecision", "ExtractedFact", "build_extractor"]
+__all__ = [
+    "ConflictJudge",
+    "Distiller",
+    "DistillDecision",
+    "ExtractedFact",
+    "JudgeResult",
+    "build_extractor",
+]
+

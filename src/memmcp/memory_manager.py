@@ -18,7 +18,7 @@ from typing import Any
 from . import scoping
 from .config import Settings, get_settings
 from .embeddings import build_embedder
-from .extraction import Distiller, build_extractor
+from .extraction import ConflictJudge, Distiller, build_extractor
 from .models import AddResult, IngestResult, Memory, ScoredMemory
 from .privacy import AuditLog, PIIScanner
 from .retrieval import Ranker
@@ -38,9 +38,24 @@ class MemoryManager:
             weights=self.settings.ranking_weights(),
             recency_halflife_days=self.settings.recency_halflife_days,
         )
+
+        # Build the optional LLM conflict judge for the ambiguity zone.
+        judge: ConflictJudge | None = None
+        if self.settings.judge_enabled:
+            try:
+                judge = ConflictJudge(self.settings)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Could not initialise ConflictJudge; "
+                    "distiller will run without LLM conflict resolution.",
+                    exc_info=True,
+                )
+
         self.distiller = Distiller(
             dedup_threshold=self.settings.dedup_threshold,
             conflict_threshold=self.settings.conflict_threshold,
+            judge=judge,
         )
         self.extractor = build_extractor(self.settings)
         self.pii = PIIScanner()
