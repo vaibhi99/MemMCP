@@ -16,7 +16,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 EmbeddingProvider = Literal["hash", "sentence-transformers", "openai"]
 VectorBackend = Literal["numpy", "chroma"]
-ExtractionProvider = Literal["openai", "anthropic"]
+ExtractionProvider = Literal["openai", "anthropic", "rule"]
 PIIPolicy = Literal["block", "redact", "flag", "off"]
 
 

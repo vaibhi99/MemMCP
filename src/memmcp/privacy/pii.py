@@ -61,22 +61,6 @@ _PATTERNS: list[tuple[str, re.Pattern[str], str]] = [
 ]
 
 
-def _luhn_ok(digits: str) -> bool:
-    """Luhn checksum, to avoid flagging arbitrary long digit runs as cards."""
-    nums = [int(c) for c in digits if c.isdigit()]
-    if not 13 <= len(nums) <= 19:
-        return False
-    checksum = 0
-    parity = len(nums) % 2
-    for i, n in enumerate(nums):
-        if i % 2 == parity:
-            n *= 2
-            if n > 9:
-                n -= 9
-        checksum += n
-    return checksum % 10 == 0
-
-
 class PIIScanner:
     """Scan text for PII and produce a redacted copy."""
 
@@ -85,9 +69,6 @@ class PIIScanner:
         redacted = text
         for pii_type, pattern, placeholder in _PATTERNS:
             def _replace(match: re.Match[str]) -> str:
-                value = match.group(0)
-                if pii_type == "credit_card" and not _luhn_ok(value):
-                    return value  # not a real card number; leave untouched
                 if pii_type not in found:
                     found.append(pii_type)
                 return placeholder

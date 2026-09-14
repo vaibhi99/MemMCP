@@ -2,8 +2,8 @@
 
 Selected via ``MEMMCP_VECTOR_BACKEND=chroma`` after
 ``pip install memmcp[chroma]``. The full :class:`~memmcp.models.Memory` is
-stored as a JSON payload in Chroma metadata, while ``scope`` is kept as a
-filterable field so nearest-neighbour search can be constrained server-side.
+stored as a JSON payload in Chroma metadata, while ``project_name`` is kept as
+a filterable field so nearest-neighbour search can be constrained server-side.
 Active/expiry filtering is applied in Python after retrieval because a memory
 can expire purely by the passage of time (no write to flip a flag).
 """
@@ -39,7 +39,10 @@ class ChromaVectorStore(VectorStore):
     @staticmethod
     def _encode(memory: Memory) -> dict[str, str]:
         record = memory.to_metadata()
-        return {"scope": memory.scope, "payload": json.dumps(record)}
+        return {
+            "project_name": memory.project_name or "",
+            "payload": json.dumps(record),
+        }
 
     @staticmethod
     def _decode(meta: dict, embedding: list[float] | None) -> Memory:
@@ -73,7 +76,7 @@ class ChromaVectorStore(VectorStore):
     def query(
         self,
         embedding: list[float],
-        scopes: list[str],
+        project_name: str | None,
         top_k: int,
         include_inactive: bool = False,
     ) -> list[tuple[Memory, float]]:
@@ -81,10 +84,20 @@ class ChromaVectorStore(VectorStore):
             return []
         # Over-fetch so post-filtering for active memories still fills top_k.
         n = min(self._collection.count(), max(top_k * 3, top_k))
+
+        # Build the where filter: match the given project OR global (empty).
+        if project_name is not None:
+            where = {"$or": [
+                {"project_name": {"$eq": project_name}},
+                {"project_name": {"$eq": ""}},
+            ]}
+        else:
+            where = {"project_name": {"$eq": ""}}
+
         res = self._collection.query(
             query_embeddings=[embedding],
             n_results=n,
-            where={"scope": {"$in": scopes}} if scopes else None,
+            where=where,
             include=["metadatas", "embeddings", "distances"],
         )
         out: list[tuple[Memory, float]] = []
@@ -101,8 +114,44 @@ class ChromaVectorStore(VectorStore):
                 break
         return out
 
-    def all(self, scopes: list[str] | None = None, include_inactive: bool = True) -> list[Memory]:
-        where = {"scope": {"$in": scopes}} if scopes else None
+    def query_all_projects(
+        self,
+        embedding: list[float],
+        top_k: int,
+        include_inactive: bool = False,
+    ) -> list[tuple[Memory, float]]:
+        if self._collection.count() == 0:
+            return []
+        n = min(self._collection.count(), max(top_k * 3, top_k))
+
+        # No project filter — search across everything.
+        res = self._collection.query(
+            query_embeddings=[embedding],
+            n_results=n,
+            include=["metadatas", "embeddings", "distances"],
+        )
+        out: list[tuple[Memory, float]] = []
+        metadatas = res["metadatas"][0]
+        distances = res["distances"][0]
+        embeddings = res["embeddings"][0]
+        for meta, dist, emb in zip(metadatas, distances, embeddings):
+            mem = self._decode(meta, list(emb) if emb is not None else None)
+            if not include_inactive and not mem.is_active:
+                continue
+            similarity = 1.0 - float(dist)
+            out.append((mem, similarity))
+            if len(out) >= top_k:
+                break
+        return out
+
+    def all(self, project_name: str | None = None, include_inactive: bool = True) -> list[Memory]:
+        if project_name is not None:
+            where = {"$or": [
+                {"project_name": {"$eq": project_name}},
+                {"project_name": {"$eq": ""}},
+            ]}
+        else:
+            where = None
         res = self._collection.get(where=where, include=["metadatas", "embeddings"])
         embeddings = res.get("embeddings") or [None] * len(res["ids"])
         out: list[Memory] = []

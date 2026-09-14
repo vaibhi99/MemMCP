@@ -6,16 +6,15 @@ This is the pipeline the resume describes:
            -> store -> (later) retrieve -> rank -> token-budget -> audit
 
 Everything above (embeddings, store, ranker, extractor, distiller, privacy)
-is pluggable; this class orchestrates them and enforces scoping + governance.
-It is transport-agnostic, so it is exercised directly by tests and wrapped by
-the MCP server in :mod:`memmcp.server`.
+is pluggable; this class orchestrates them and enforces project isolation
++ governance.  It is transport-agnostic, so it is exercised directly by
+tests and wrapped by the MCP server in :mod:`memmcp.server`.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from . import scoping
 from .config import Settings, get_settings
 from .embeddings import build_embedder
 from .extraction import ConflictJudge, Distiller, build_extractor
@@ -68,7 +67,7 @@ class MemoryManager:
         self,
         content: str,
         *,
-        scope: str | None = None,
+        project_name: str | None = None,
         importance: float = 0.5,
         key: str | None = None,
         tags: list[str] | None = None,
@@ -77,7 +76,6 @@ class MemoryManager:
         actor: str = "unknown",
     ) -> AddResult:
         """Store a single fact, applying PII policy + distillation."""
-        scope = scoping.normalize(scope)
         content = content.strip()
         if not content:
             return AddResult("blocked", None, note="empty content")
@@ -89,7 +87,7 @@ class MemoryManager:
         if result.has_pii:
             if policy == "block":
                 self.audit.record(
-                    "store_blocked", actor=actor, scope=scope,
+                    "store_blocked", actor=actor, project_name=project_name,
                     details={"pii": result.types},
                 )
                 return AddResult("blocked", None, note=f"PII detected: {result.types}")
@@ -102,7 +100,7 @@ class MemoryManager:
 
         memory = Memory(
             content=content,
-            scope=scope,
+            project_name=project_name,
             importance=max(0.0, min(1.0, importance)),
             key=key,
             tags=tags or [],
@@ -115,14 +113,14 @@ class MemoryManager:
         return self._distill_and_store(memory, actor=actor)
 
     def _distill_and_store(self, memory: Memory, actor: str) -> AddResult:
-        readable = scoping.readable_scopes(memory.scope)
-        similar = self.store.query(memory.embedding, readable, top_k=10)
-        # Conflict resolution is confined to the writing scope so a project
-        # write can never silently supersede a broader/global belief.
+        similar = self.store.query(memory.embedding, memory.project_name, top_k=10)
+        # Conflict resolution is confined to the same project so a write
+        # can never silently supersede a broader/global belief.
         same_key = [
             m
-            for m in self.store.all(scopes=[memory.scope], include_inactive=False)
+            for m in self.store.all(project_name=memory.project_name, include_inactive=False)
             if memory.key and m.key == memory.key
+            and m.project_name == memory.project_name
         ]
 
         decision = self.distiller.decide(memory, similar, same_key)
@@ -134,13 +132,13 @@ class MemoryManager:
             target.touch()
             self.store.upsert(target)
             self.audit.record(
-                "merge", actor=actor, scope=memory.scope, memory_id=target.id,
+                "merge", actor=actor, project_name=memory.project_name, memory_id=target.id,
                 details={"reason": decision.reason, "similarity": round(decision.similarity, 3)},
             )
             return AddResult("merged", target, note=decision.reason)
 
-        # Restrict supersede targets to the same scope.
-        supersede_targets = [t for t in decision.targets if t.scope == memory.scope]
+        # Restrict supersede targets to the same project.
+        supersede_targets = [t for t in decision.targets if t.project_name == memory.project_name]
         if decision.action == "supersede" and supersede_targets:
             superseded_ids = []
             max_version = memory.version
@@ -152,7 +150,7 @@ class MemoryManager:
             memory.version = max_version
             self.store.upsert(memory)
             self.audit.record(
-                "supersede", actor=actor, scope=memory.scope, memory_id=memory.id,
+                "supersede", actor=actor, project_name=memory.project_name, memory_id=memory.id,
                 details={"reason": decision.reason, "superseded": superseded_ids},
             )
             return AddResult("superseded", memory, superseded_ids, decision.reason)
@@ -160,7 +158,7 @@ class MemoryManager:
         # Default: create.
         self.store.upsert(memory)
         self.audit.record(
-            "create", actor=actor, scope=memory.scope, memory_id=memory.id,
+            "create", actor=actor, project_name=memory.project_name, memory_id=memory.id,
             details={"key": memory.key, "pii": memory.pii_types},
         )
         return AddResult("created", memory, note=decision.reason)
@@ -169,19 +167,18 @@ class MemoryManager:
         self,
         conversation: str | list[dict],
         *,
-        scope: str | None = None,
+        project_name: str | None = None,
         source: str = "ingest",
         actor: str = "unknown",
     ) -> IngestResult:
         """Extract facts from a raw conversation and store each distilled fact."""
-        scope = scoping.normalize(scope)
         facts = self.extractor.extract(conversation)
         results: list[AddResult] = []
         for fact in facts:
             results.append(
                 self.remember(
                     fact.content,
-                    scope=scope,
+                    project_name=project_name,
                     importance=fact.importance,
                     key=fact.key,
                     tags=fact.tags,
@@ -190,7 +187,7 @@ class MemoryManager:
                 )
             )
         self.audit.record(
-            "ingest", actor=actor, scope=scope,
+            "ingest", actor=actor, project_name=project_name,
             details={"extracted": len(facts), "stored": len(results)},
         )
         return IngestResult(extracted=len(facts), stored=results)
@@ -202,20 +199,29 @@ class MemoryManager:
         self,
         query: str,
         *,
-        scope: str | None = None,
+        project_name: str | None = None,
         top_k: int = 5,
         token_budget: int | None = None,
         actor: str = "unknown",
     ) -> list[ScoredMemory]:
-        """Return the most relevant memories for ``query`` within ``scope``.
+        """Return the most relevant memories for ``query``.
+
+        When ``project_name`` is given, searches that project + global.
+        When ``project_name`` is ``None``, searches across **all** projects
+        (cross-project discovery) so the LLM can find context even when it
+        doesn't know which project to ask about.
 
         Blends relevance + recency + importance, then greedily packs the result
         into ``token_budget`` (surface the few facts that matter, not 50 pages).
         """
-        scopes = scoping.readable_scopes(scope)
         query_vec = self.embedder.embed(query)
         # Over-fetch candidates so ranking has room to reorder.
-        candidates = self.store.query(query_vec, scopes, top_k=max(top_k * 4, 20))
+        fetch_k = max(top_k * 4, 20)
+        if project_name is not None:
+            candidates = self.store.query(query_vec, project_name, top_k=fetch_k)
+        else:
+            # Cross-project search: search ALL projects when no name given.
+            candidates = self.store.query_all_projects(query_vec, top_k=fetch_k)
         scored = self.ranker.score(candidates)
         packed = self.ranker.pack(scored, token_budget=token_budget, top_k=top_k)
 
@@ -225,10 +231,11 @@ class MemoryManager:
             self.store.upsert(item.memory)
 
         self.audit.record(
-            "recall", actor=actor, scope=scoping.normalize(scope),
+            "recall", actor=actor, project_name=project_name,
             details={
                 "query_chars": len(query),
                 "returned": [i.memory.id for i in packed],
+                "cross_project": project_name is None,
             },
         )
         return packed
@@ -274,28 +281,60 @@ class MemoryManager:
         memory.version += 1
         memory.updated_at = memory.last_accessed_at
         self.store.upsert(memory)
-        self.audit.record("update", actor=actor, scope=memory.scope, memory_id=memory.id)
+        self.audit.record("update", actor=actor, project_name=memory.project_name, memory_id=memory.id)
         return memory
 
     def list_memories(
         self,
         *,
-        scope: str | None = None,
+        project_name: str | None = None,
         include_inactive: bool = False,
     ) -> list[Memory]:
-        scopes = [scoping.normalize(scope)] if scope else None
-        memories = self.store.all(scopes=scopes, include_inactive=include_inactive)
+        memories = self.store.all(project_name=project_name, include_inactive=include_inactive)
         return sorted(memories, key=lambda m: m.created_at, reverse=True)
 
-    def consolidate(self, *, scope: str | None = None, actor: str = "system") -> int:
-        """Merge near-duplicate active memories within a scope.
+    def list_projects(self) -> list[dict[str, Any]]:
+        """Return all known project names with summary stats.
+
+        Scans every stored memory and aggregates by project_name. Returns a
+        list of dicts with ``name``, ``memory_count``, and ``last_updated``
+        for each project. Global (unscoped) memories appear as ``name: null``.
+        """
+        all_active = self.store.all(include_inactive=False)
+        projects: dict[str | None, dict[str, Any]] = {}
+        for mem in all_active:
+            key = mem.project_name
+            if key not in projects:
+                projects[key] = {
+                    "name": key,
+                    "memory_count": 0,
+                    "last_updated": mem.updated_at,
+                    "categories": set(),
+                }
+            entry = projects[key]
+            entry["memory_count"] += 1
+            entry["last_updated"] = max(entry["last_updated"], mem.updated_at)
+            if mem.category:
+                entry["categories"].add(mem.category)
+        # Convert sets to sorted lists for JSON serialisation.
+        result = []
+        for entry in sorted(
+            projects.values(),
+            key=lambda e: e["last_updated"],
+            reverse=True,
+        ):
+            entry["categories"] = sorted(entry["categories"])
+            result.append(entry)
+        return result
+
+    def consolidate(self, *, project_name: str | None = None, actor: str = "system") -> int:
+        """Merge near-duplicate active memories within a project.
 
         A lightweight take on memory consolidation: for each active memory,
         fold any later near-duplicates into it (keeping the max importance).
         Returns the number of memories merged away.
         """
-        scopes = [scoping.normalize(scope)] if scope else None
-        active = [m for m in self.store.all(scopes=scopes, include_inactive=False)]
+        active = [m for m in self.store.all(project_name=project_name, include_inactive=False)]
         merged = 0
         kept: list[Memory] = []
         for mem in sorted(active, key=lambda m: m.created_at):
@@ -303,7 +342,7 @@ class MemoryManager:
             from .embeddings import cosine_similarity
 
             for keeper in kept:
-                if keeper.scope != mem.scope or mem.embedding is None:
+                if keeper.project_name != mem.project_name or mem.embedding is None:
                     continue
                 if cosine_similarity(keeper.embedding, mem.embedding) >= self.settings.dedup_threshold:
                     duplicate_of = keeper
@@ -325,7 +364,7 @@ class MemoryManager:
     def get_project_context(
         self,
         *,
-        scope: str | None = None,
+        project_name: str | None = None,
         categories: list[str] | None = None,
         detail_level: str = "full",
         actor: str = "unknown",
@@ -338,7 +377,7 @@ class MemoryManager:
         a complete project model at session start.
 
         Args:
-            scope: Namespace to search (sees ancestors + global).
+            project_name: Project to search (also includes global memories).
             categories: Optional filter — only include these categories.
                 Valid: identity, stack, project, module, workflow, decision,
                        domain, status.  ``None`` means all.
@@ -348,9 +387,8 @@ class MemoryManager:
         """
         from .models import CATEGORIES, _category_from_key
 
-        scopes = scoping.readable_scopes(scope)
         active = [
-            m for m in self.store.all(scopes=scopes, include_inactive=False)
+            m for m in self.store.all(project_name=project_name, include_inactive=False)
         ]
 
         # Group by category.
@@ -375,7 +413,7 @@ class MemoryManager:
             grouped.setdefault(cat, []).append(entry)
 
         # Build the structured output.
-        result: dict[str, Any] = {"scope": scoping.normalize(scope)}
+        result: dict[str, Any] = {"project_name": project_name}
         for cat_key in CATEGORIES:
             if categories and cat_key not in categories:
                 continue
@@ -388,7 +426,7 @@ class MemoryManager:
 
         self.audit.record(
             "project_context", actor=actor,
-            scope=scoping.normalize(scope),
+            project_name=project_name,
             details={"categories": list(result.keys()), "total_facts": sum(
                 len(v) for v in result.values() if isinstance(v, list)
             )},
@@ -405,26 +443,26 @@ class MemoryManager:
     ) -> IngestResult:
         """Bootstrap project memory from a codebase description.
 
-        Like ``ingest()`` but sets the scope to the project and uses a higher
+        Like ``ingest()`` but sets the project_name and uses a higher
         default importance since codebase descriptions are authoritative.
 
         Args:
             summary: High-level description of the codebase (what it is, its
                 modules, architecture, etc.).
-            project_name: Optional project name for scoping.
+            project_name: Optional project name for filtering.
             source: Provenance label.
             actor: Calling tool name.
         """
-        scope = scoping.make(project=project_name) if project_name else "global"
-        return self.ingest(summary, scope=scope, source=source, actor=actor)
+        return self.ingest(summary, project_name=project_name, source=source, actor=actor)
 
     def stats(self) -> dict[str, Any]:
         all_mems = self.store.all(include_inactive=True)
         active = [m for m in all_mems if m.is_active]
-        by_scope: dict[str, int] = {}
+        by_project: dict[str, int] = {}
         by_category: dict[str, int] = {}
         for m in active:
-            by_scope[m.scope] = by_scope.get(m.scope, 0) + 1
+            proj = m.project_name or "global"
+            by_project[proj] = by_project.get(proj, 0) + 1
             cat = m.category or "other"
             by_category[cat] = by_category.get(cat, 0) + 1
         return {
@@ -432,7 +470,7 @@ class MemoryManager:
             "active": len(active),
             "inactive": len(all_mems) - len(active),
             "with_pii": sum(1 for m in active if m.pii_types),
-            "by_scope": by_scope,
+            "by_project": by_project,
             "by_category": by_category,
             "embedding_provider": self.settings.embedding_provider,
             "embedding_dim": self.embedder.dim,

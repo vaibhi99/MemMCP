@@ -71,20 +71,32 @@ class NumpyVectorStore(VectorStore):
                 self._flush()
             return existed
 
+    # -- helpers ---------------------------------------------------------
+    @staticmethod
+    def _matches_project(mem: Memory, project_name: str | None) -> bool:
+        """Check if a memory matches the project filter (Option B).
+
+        When ``project_name`` is given, match memories belonging to that
+        project **or** global memories (project_name is None).
+        When ``project_name`` is ``None``, only match global memories.
+        """
+        if project_name is None:
+            return mem.project_name is None
+        return mem.project_name == project_name or mem.project_name is None
+
     # -- search ----------------------------------------------------------
     def query(
         self,
         embedding: list[float],
-        scopes: list[str],
+        project_name: str | None,
         top_k: int,
         include_inactive: bool = False,
     ) -> list[tuple[Memory, float]]:
         with self._lock:
-            scope_set = set(scopes)
             candidates = [
                 m
                 for m in self._memories.values()
-                if m.scope in scope_set and (include_inactive or m.is_active)
+                if self._matches_project(m, project_name) and (include_inactive or m.is_active)
             ]
             if not candidates:
                 return []
@@ -102,13 +114,39 @@ class NumpyVectorStore(VectorStore):
             top_idx = np.argsort(-sims)[:k]
             return [(candidates[i], float(sims[i])) for i in top_idx]
 
-    def all(self, scopes: list[str] | None = None, include_inactive: bool = True) -> list[Memory]:
+    def query_all_projects(
+        self,
+        embedding: list[float],
+        top_k: int,
+        include_inactive: bool = False,
+    ) -> list[tuple[Memory, float]]:
         with self._lock:
-            scope_set = set(scopes) if scopes is not None else None
+            candidates = [
+                m
+                for m in self._memories.values()
+                if include_inactive or m.is_active
+            ]
+            if not candidates:
+                return []
+
+            matrix = np.asarray([m.embedding for m in candidates], dtype=np.float32)
+            query_vec = np.asarray(embedding, dtype=np.float32)
+
+            matrix_norms = np.linalg.norm(matrix, axis=1)
+            matrix_norms[matrix_norms == 0] = 1.0
+            q_norm = np.linalg.norm(query_vec) or 1.0
+            sims = (matrix @ query_vec) / (matrix_norms * q_norm)
+
+            k = min(top_k, len(candidates))
+            top_idx = np.argsort(-sims)[:k]
+            return [(candidates[i], float(sims[i])) for i in top_idx]
+
+    def all(self, project_name: str | None = None, include_inactive: bool = True) -> list[Memory]:
+        with self._lock:
             return [
                 m
                 for m in self._memories.values()
-                if (scope_set is None or m.scope in scope_set)
+                if (project_name is None or self._matches_project(m, project_name))
                 and (include_inactive or m.is_active)
             ]
 

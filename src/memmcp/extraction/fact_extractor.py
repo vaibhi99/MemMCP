@@ -346,9 +346,20 @@ def _conversation_to_text(conversation: str | list[dict]) -> str:
     return str(conversation)
 
 
+class RuleExtractor:
+    """A naive rule-based extractor for offline tests."""
+    def extract(self, conversation: str | list[dict]) -> list[ExtractedFact]:
+        text = _conversation_to_text(conversation)
+        # Just split by dot and return naive facts.
+        sentences = [s.strip() for s in text.split(".") if s.strip()]
+        return [ExtractedFact(content=s + ".") for s in sentences]
+
+
 def build_extractor(settings: Settings):
     """Build the configured extractor."""
     provider = settings.extraction_provider
+    if provider == "rule":
+        return RuleExtractor()
     if provider == "openai":
         return OpenAIExtractor(settings.extraction_model, settings.openai_api_key, settings)
     if provider == "anthropic":

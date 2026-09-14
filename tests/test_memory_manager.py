@@ -7,7 +7,7 @@ from memmcp.memory_manager import MemoryManager
 
 
 def test_remember_creates_memory(manager):
-    result = manager.remember("User uses Postgres.", scope="global", key="user:database")
+    result = manager.remember("User uses Postgres.", key="user:database")
     assert result.action == "created"
     assert manager.store.count() == 1
 
@@ -41,16 +41,16 @@ def test_recall_surfaces_relevant_memory(manager):
     assert "Postgres" in scored[0].memory.content
 
 
-def test_scope_isolation(manager):
-    manager.remember("Global fact: user prefers dark mode.", scope="global")
-    manager.remember("Acme uses Redis for caching.", scope="project:acme")
-    manager.remember("Beta uses MongoDB.", scope="project:beta")
+def test_project_isolation(manager):
+    manager.remember("Global fact: user prefers dark mode.")
+    manager.remember("Acme uses Redis for caching.", project_name="acme")
+    manager.remember("Beta uses MongoDB.", project_name="beta")
 
-    scored = manager.recall("what does the project use", scope="project:acme", top_k=10)
+    scored = manager.recall("what does the project use", project_name="acme", top_k=10)
     contents = " ".join(s.memory.content for s in scored)
     assert "MongoDB" not in contents  # other project's memory stays isolated
-    # Global facts remain visible from within a project scope.
-    assert any(s.memory.scope == "global" for s in scored)
+    # Global facts remain visible from within a project.
+    assert any(s.memory.project_name is None for s in scored)
 
 
 def test_recall_excludes_expired(manager):
@@ -75,6 +75,7 @@ def test_pii_block_policy(tmp_path):
         data_dir=tmp_path / "data",
         embedding_provider="hash",
         vector_backend="numpy",
+        extraction_provider="rule",
         pii_policy="block",
     )
     manager = MemoryManager(settings=settings)
@@ -85,9 +86,9 @@ def test_pii_block_policy(tmp_path):
 
 def test_ingest_pipeline(manager):
     convo = "I use Postgres. I prefer TypeScript. I hate ORMs."
-    result = manager.ingest(convo, scope="project:acme")
+    result = manager.ingest(convo, project_name="acme")
     assert result.extracted >= 3
-    active = manager.list_memories(scope="project:acme")
+    active = manager.list_memories(project_name="acme")
     assert len(active) >= 3
 
 
@@ -106,12 +107,12 @@ def test_update_reembeds_on_content_change(manager):
 
 
 def test_stats_report(manager):
-    manager.remember("Fact one.", scope="global")
-    manager.remember("Fact two.", scope="project:acme")
+    manager.remember("Fact one.")
+    manager.remember("Fact two.", project_name="acme")
     stats = manager.stats()
     assert stats["active"] == 2
     assert stats["embedding_provider"] == "hash"
-    assert "project:acme" in stats["by_scope"]
+    assert "acme" in stats["by_project"]
 
 
 def test_audit_log_records_operations(manager):
@@ -124,14 +125,14 @@ def test_audit_log_records_operations(manager):
 
 
 def test_consolidate_merges_near_duplicates(manager):
-    manager.remember("User deploys with Docker containers.", scope="global")
+    manager.remember("User deploys with Docker containers.")
     # Force a second, un-distilled near-duplicate directly into the store.
     from memmcp.models import Memory
 
-    dup = Memory(content="User deploys with Docker containers.", scope="global")
+    dup = Memory(content="User deploys with Docker containers.")
     dup.embedding = manager.embedder.embed(dup.content)
     manager.store.upsert(dup)
     assert manager.store.count() == 2
-    merged = manager.consolidate(scope="global")
+    merged = manager.consolidate()
     assert merged == 1
     assert manager.store.count() == 1

@@ -7,7 +7,6 @@ The package is organised into focused sub-systems:
 
     config          Environment-driven settings.
     models          Core data types (Memory, ScoredMemory, results).
-    scoping         Project / tool level namespaces.
     embeddings/     Pluggable embedding providers (hash, local, OpenAI).
     store/          Pluggable vector stores (numpy, Chroma).
     retrieval/      Relevance + recency + importance ranking.

@@ -29,7 +29,7 @@ _manager = MemoryManager()
 @mcp.tool()
 def remember(
     content: str,
-    scope: str = "global",
+    project_name: str | None = None,
     importance: float = 0.5,
     key: str | None = None,
     tags: list[str] | None = None,
@@ -70,11 +70,23 @@ def remember(
     Good:  "Project uses PostgreSQL as primary database."
     Bad:   "they said postgres" (not self-contained, ambiguous)
 
+    ## How to choose the project_name
+    - **IDE/editor** (Cursor, Windsurf, VS Code, etc.): ALWAYS use the name
+      of the current workspace directory/folder as the project_name.
+    - **Chat-only client** (Claude Desktop, ChatGPT, etc.): If the user is
+      talking about a specific project, ask once or infer from context. If
+      unsure, call `list_projects` first to see existing project names and
+      pick the matching one.
+    - **Never guess a new name** if one already exists — always check
+      `list_projects` before inventing a project name.
+
     Args:
         content: The fact, e.g. "Project uses PostgreSQL as primary database."
-        scope: Namespace. "global", "project:<name>", "tool:<name>", or
-            "project:<name>/tool:<name>". Facts are visible to that scope and
-            its descendants.
+        project_name: Project name to associate this fact with.
+            If omitted (None), the fact is stored as a global memory visible
+            to all projects. If provided, the fact is scoped to that project
+            but still visible alongside global memories when querying that
+            project.
         importance: 0..1 estimate of long-term value.
             - 0.85–0.95: identity, architecture, core decisions
             - 0.75–0.85: module descriptions, workflows
@@ -98,7 +110,7 @@ def remember(
     retired), or blocked (PII policy refused it).
     """
     result = _manager.remember(
-        content, scope=scope, importance=importance, key=key,
+        content, project_name=project_name, importance=importance, key=key,
         tags=tags, source=tool, ttl_days=ttl_days, actor=tool,
     )
     return result.summary()
@@ -107,7 +119,7 @@ def remember(
 @mcp.tool()
 def ingest_conversation(
     conversation: str,
-    scope: str = "global",
+    project_name: str | None = None,
     tool: str = "unknown",
 ) -> dict[str, Any]:
     """Distill a raw conversation or dense text into clean facts and store them.
@@ -129,15 +141,20 @@ def ingest_conversation(
     against existing memory. Dead ends, chit-chat, and corrected mistakes are
     discarded automatically.
 
+    ## How to choose the project_name
+    Same as ``remember``: use the workspace folder name in IDEs. In chat
+    clients, call ``list_projects`` first if unsure.
+
     Args:
         conversation: The raw text to distill — can be a chat transcript, your
             own generated response, meeting notes, or any unstructured text.
-        scope: Namespace to store the resulting facts in (see `remember`).
+        project_name: Project name. If provided, facts are stored under that
+            project. If omitted, stored as global.
         tool: Calling tool name (for audit + provenance).
 
     Returns counts of extracted/created/merged/superseded facts.
     """
-    return _manager.ingest(conversation, scope=scope, source=tool, actor=tool).summary()
+    return _manager.ingest(conversation, project_name=project_name, source=tool, actor=tool).summary()
 
 
 # ==========================================================================
@@ -146,7 +163,7 @@ def ingest_conversation(
 @mcp.tool()
 def recall(
     query: str,
-    scope: str = "global",
+    project_name: str | None = None,
     top_k: int = 5,
     token_budget: int | None = None,
     tool: str = "unknown",
@@ -157,20 +174,39 @@ def recall(
     context. Returns the top facts ranked by relevance + recency + importance,
     trimmed to a token budget so you never overflow the context window.
 
+    ## Cross-project discovery
+    When ``project_name`` is omitted (None), recall searches **across all
+    projects** — not just global memories. Each result includes a
+    ``project_name`` field so you can see which project a fact belongs to.
+    This is useful when the user hasn't told you which project they're working
+    on: search broadly, read the project names in the results, and use the
+    correct name for follow-up calls.
+
+    ## How to choose the project_name
+    Same as ``remember``: use the workspace folder name in IDEs. In chat
+    clients, call ``list_projects`` first if unsure, or leave it blank to
+    search everything.
+
     Args:
         query: What you need context about (the user's request/topic).
-        scope: Namespace to search (sees this scope, its ancestors, and global).
+        project_name: Project name to search within. When given, searches that
+            project's memories plus global memories. When omitted (None),
+            searches across ALL projects (cross-project discovery).
         top_k: Maximum number of facts to return.
         token_budget: Optional cap on total tokens of returned facts.
         tool: Calling tool name (for audit).
 
     Returns a ready-to-inject ``context_block`` string plus the structured
-    ``memories`` with their ranking signals.
+    ``memories`` with their ranking signals. Each memory includes its
+    ``project_name`` so you can tell which project it belongs to.
     """
     scored = _manager.recall(
-        query, scope=scope, top_k=top_k, token_budget=token_budget, actor=tool,
+        query, project_name=project_name, top_k=top_k, token_budget=token_budget, actor=tool,
     )
-    lines = [f"- {s.memory.content}" for s in scored]
+    lines = []
+    for s in scored:
+        proj_label = f" [{s.memory.project_name}]" if s.memory.project_name else " [global]"
+        lines.append(f"- {s.memory.content}{proj_label}")
     context_block = "Relevant remembered context:\n" + "\n".join(lines) if lines else ""
     return {
         "count": len(scored),
@@ -184,7 +220,7 @@ def recall(
 # ==========================================================================
 @mcp.tool()
 def get_project_context(
-    scope: str = "global",
+    project_name: str | None = None,
     categories: list[str] | None = None,
     detail_level: str = "full",
     tool: str = "unknown",
@@ -196,8 +232,13 @@ def get_project_context(
     domain terms, and status — grouped by category. Much richer than ``recall``
     which returns a flat ranked list for a specific query.
 
+    ## How to choose the project_name
+    Same as ``remember``: use the workspace folder name in IDEs. In chat
+    clients, call ``list_projects`` first to find the right name.
+
     Args:
-        scope: Namespace to search (sees this scope, its ancestors, and global).
+        project_name: Project name to search within. Also includes global
+            memories. Omit for global-only.
         categories: Optional filter — only include specific categories.
             Valid values: "identity", "stack", "project", "module", "workflow",
             "decision", "domain", "status". Pass null/omit for all categories.
@@ -209,7 +250,7 @@ def get_project_context(
     their content, key, and importance. Only non-empty categories appear.
     """
     return _manager.get_project_context(
-        scope=scope, categories=categories,
+        project_name=project_name, categories=categories,
         detail_level=detail_level, actor=tool,
     )
 
@@ -218,7 +259,6 @@ def get_project_context(
 def ingest_codebase_summary(
     summary: str,
     project_name: str | None = None,
-    scope: str | None = None,
     tool: str = "unknown",
 ) -> dict[str, Any]:
     """Bootstrap project memory from a high-level codebase description.
@@ -230,25 +270,57 @@ def ingest_codebase_summary(
     Ideal for onboarding: describe your project once, and every future session
     (across all connected tools) will already have the context.
 
+    ## How to choose the project_name
+    Same as ``remember``: use the workspace folder name in IDEs. In chat
+    clients, call ``list_projects`` first if unsure.
+
     Args:
         summary: A description of the codebase/project. Can be multi-paragraph.
             Include as much detail as useful: what the project is, its modules,
             architecture, tech stack, deployment, key decisions, domain terms.
-        project_name: Optional project name (used for scoping, e.g. "acme").
-        scope: Explicit scope override. If omitted, auto-derived from
-            project_name (e.g. "project:acme") or defaults to "global".
+        project_name: Project name. Facts will be stored under this project.
+            If omitted, stored as global.
         tool: Calling tool name (for audit + provenance).
 
     Returns counts of extracted/created/merged/superseded facts.
     """
-    if scope:
-        from . import scoping
-        result = _manager.ingest(summary, scope=scope, source="codebase_scan", actor=tool)
-    else:
-        result = _manager.ingest_codebase(
-            summary, project_name=project_name, source="codebase_scan", actor=tool,
-        )
+    result = _manager.ingest_codebase(
+        summary, project_name=project_name, source="codebase_scan", actor=tool,
+    )
     return result.summary()
+
+
+# ==========================================================================
+# Project discovery
+# ==========================================================================
+@mcp.tool()
+def list_projects() -> dict[str, Any]:
+    """List all known projects that have stored memories.
+
+    ## When to use this tool
+    Call this FIRST when you are unsure which project the user is working on:
+    - At the start of a chat session in a non-IDE client (Claude Desktop,
+      ChatGPT, etc.) to discover what projects exist.
+    - Before inventing a new project_name — check if one already exists that
+      matches (to avoid creating duplicates like "my-app" vs "MyApp").
+    - When the user mentions a project by a partial or informal name — look
+      up the exact stored name here.
+
+    In IDE-based clients (Cursor, Windsurf, VS Code) you usually already know
+    the workspace folder name, but calling this is still useful to confirm the
+    exact project name used in memory.
+
+    Returns a list of projects, each with:
+    - ``name``: the project_name (null for global/unscoped memories)
+    - ``memory_count``: number of active facts stored
+    - ``last_updated``: when the most recent fact was updated
+    - ``categories``: which knowledge categories have facts
+    """
+    projects = _manager.list_projects()
+    return {
+        "count": len(projects),
+        "projects": projects,
+    }
 
 
 # ==========================================================================
@@ -256,15 +328,19 @@ def ingest_codebase_summary(
 # ==========================================================================
 @mcp.tool()
 def list_memories(
-    scope: str | None = None,
+    project_name: str | None = None,
     include_inactive: bool = False,
 ) -> dict[str, Any]:
-    """List stored memories, optionally filtered to a scope.
+    """List stored memories, optionally filtered to a project.
 
     Set ``include_inactive`` to also show superseded/expired facts (useful for
     auditing how beliefs changed over time).
+
+    ## How to choose the project_name
+    Same as ``remember``: use the workspace folder name in IDEs. In chat
+    clients, call ``list_projects`` first if unsure.
     """
-    memories = _manager.list_memories(scope=scope, include_inactive=include_inactive)
+    memories = _manager.list_memories(project_name=project_name, include_inactive=include_inactive)
     return {"count": len(memories), "memories": [m.summary() for m in memories]}
 
 
@@ -293,9 +369,9 @@ def forget(memory_id: str, tool: str = "unknown") -> dict[str, Any]:
 
 
 @mcp.tool()
-def consolidate(scope: str | None = None) -> dict[str, Any]:
-    """Merge near-duplicate memories within a scope to keep memory clean."""
-    merged = _manager.consolidate(scope=scope)
+def consolidate(project_name: str | None = None) -> dict[str, Any]:
+    """Merge near-duplicate memories within a project to keep memory clean."""
+    merged = _manager.consolidate(project_name=project_name)
     return {"merged": merged}
 
 

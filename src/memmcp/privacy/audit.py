@@ -1,9 +1,9 @@
 """Append-only audit log of every memory operation.
 
 Each line is a self-contained JSON record (JSONL), so the log is easy to tail,
-grep, ship to a SIEM, or replay. We log *what happened* (action, scope, actor,
-memory id, PII types) but never the raw sensitive content, so the audit trail
-itself does not become a leak.
+grep, ship to a SIEM, or replay. We log *what happened* (action, project,
+actor, memory id, PII types) but never the raw sensitive content, so the audit
+trail itself does not become a leak.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ class AuditLog:
         action: str,
         *,
         actor: str = "unknown",
-        scope: str | None = None,
+        project_name: str | None = None,
         memory_id: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> None:
@@ -38,7 +38,7 @@ class AuditLog:
             "iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "action": action,
             "actor": actor,
-            "scope": scope,
+            "project_name": project_name,
             "memory_id": memory_id,
             "details": details or {},
         }

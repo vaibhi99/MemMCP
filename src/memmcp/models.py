@@ -3,7 +3,7 @@
 A :class:`Memory` is one distilled, self-contained fact ("uses Postgres",
 "prefers TypeScript") — not a raw chat transcript. Memories carry the metadata
 needed for selective retrieval (importance), staleness handling (ttl, version,
-superseded_by), scoping, and privacy (pii_types).
+superseded_by), project association, and privacy (pii_types).
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ class Memory:
 
     Attributes:
         content: The distilled fact text.
-        scope: Namespace this fact belongs to (see :mod:`memmcp.scoping`).
+        project_name: Project this fact belongs to; ``None`` means global.
         importance: Caller / model estimate of long-term value, 0..1.
         key: Optional canonical subject-predicate key (e.g. ``"db.choice"``)
             used for conflict detection. Facts sharing a key are considered
@@ -93,7 +93,7 @@ class Memory:
     """
 
     content: str
-    scope: str = "global"
+    project_name: str | None = None
     importance: float = 0.5
     key: str | None = None
     tags: list[str] = field(default_factory=list)
@@ -172,7 +172,7 @@ class Memory:
         return {
             "id": self.id,
             "content": self.content,
-            "scope": self.scope,
+            "project_name": self.project_name,
             "importance": round(self.importance, 3),
             "key": self.key,
             "category": self.category,

@@ -192,11 +192,11 @@ class TestGetProjectContext:
         assert content.endswith(".")
         assert "refresh tokens" not in content
 
-    def test_scope_isolation(self, manager):
-        manager.remember("Acme module auth.", key="project:module:auth", scope="project:acme")
-        manager.remember("Beta module billing.", key="project:module:billing", scope="project:beta")
+    def test_project_isolation(self, manager):
+        manager.remember("Acme module auth.", key="project:module:auth", project_name="acme")
+        manager.remember("Beta module billing.", key="project:module:billing", project_name="beta")
 
-        ctx = manager.get_project_context(scope="project:acme")
+        ctx = manager.get_project_context(project_name="acme")
         module_contents = " ".join(f["content"] for f in ctx.get("module", []))
         assert "auth" in module_contents
         assert "billing" not in module_contents
@@ -208,8 +208,8 @@ class TestGetProjectContext:
 
     def test_empty_when_no_memories(self, manager):
         ctx = manager.get_project_context()
-        # Only "scope" key, no categories.
-        assert ctx == {"scope": "global"}
+        # Only "project_name" key, no categories.
+        assert ctx == {"project_name": None}
 
 
 # =========================================================================
@@ -224,20 +224,20 @@ class TestIngestCodebase:
         )
         result = manager.ingest_codebase(description, project_name="payments")
         assert result.extracted >= 2
-        active = manager.list_memories(scope="project:payments")
+        active = manager.list_memories(project_name="payments")
         assert len(active) >= 2
 
-    def test_scopes_to_project(self, manager):
+    def test_project_name_is_set(self, manager):
         result = manager.ingest_codebase("I use Redis.", project_name="myapp")
         for add_result in result.stored:
             if add_result.memory:
-                assert add_result.memory.scope == "project:myapp"
+                assert add_result.memory.project_name == "myapp"
 
     def test_defaults_to_global_without_project_name(self, manager):
         result = manager.ingest_codebase("I use Postgres.")
         for add_result in result.stored:
             if add_result.memory:
-                assert add_result.memory.scope == "global"
+                assert add_result.memory.project_name is None
 
 
 # =========================================================================

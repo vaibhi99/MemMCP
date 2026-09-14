@@ -1,9 +1,9 @@
 """Vector-store interface shared by every backend.
 
 A store owns persistence of :class:`~memmcp.models.Memory` objects and their
-embeddings, plus nearest-neighbour search filtered by scope. Ranking lives in
-:mod:`memmcp.retrieval`, not here — the store only returns candidates by
-vector similarity.
+embeddings, plus nearest-neighbour search filtered by project name. Ranking
+lives in :mod:`memmcp.retrieval`, not here — the store only returns candidates
+by vector similarity.
 """
 
 from __future__ import annotations
@@ -32,19 +32,42 @@ class VectorStore(ABC):
     def query(
         self,
         embedding: list[float],
-        scopes: list[str],
+        project_name: str | None,
         top_k: int,
         include_inactive: bool = False,
     ) -> list[tuple[Memory, float]]:
         """Return up to ``top_k`` ``(memory, cosine_similarity)`` pairs.
 
-        Only memories whose ``scope`` is in ``scopes`` are considered. Inactive
-        (superseded / expired) memories are excluded unless ``include_inactive``.
+        When ``project_name`` is given, returns memories belonging to that
+        project **plus** global memories (``project_name is None``).
+        When ``project_name`` is ``None``, only global memories are returned.
+        Inactive (superseded / expired) memories are excluded unless
+        ``include_inactive``.
         """
 
     @abstractmethod
-    def all(self, scopes: list[str] | None = None, include_inactive: bool = True) -> list[Memory]:
-        """Return every stored memory, optionally filtered by scope."""
+    def query_all_projects(
+        self,
+        embedding: list[float],
+        top_k: int,
+        include_inactive: bool = False,
+    ) -> list[tuple[Memory, float]]:
+        """Return up to ``top_k`` ``(memory, cosine_similarity)`` pairs
+        across **all** projects (no project filter).
+
+        Used for cross-project discovery when the caller doesn't know which
+        project to search. Results include memories from every project and
+        global scope.  Inactive memories are excluded unless
+        ``include_inactive``.
+        """
+
+    @abstractmethod
+    def all(self, project_name: str | None = None, include_inactive: bool = True) -> list[Memory]:
+        """Return every stored memory, optionally filtered by project name.
+
+        When ``project_name`` is given, returns memories belonging to that
+        project **plus** global memories. When ``None``, returns everything.
+        """
 
     @abstractmethod
     def count(self) -> int:
