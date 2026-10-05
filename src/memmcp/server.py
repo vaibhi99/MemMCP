@@ -70,15 +70,11 @@ def remember(
     Good:  "Project uses PostgreSQL as primary database."
     Bad:   "they said postgres" (not self-contained, ambiguous)
 
-    ## How to choose the project_name
-    - **IDE/editor** (Cursor, Windsurf, VS Code, etc.): ALWAYS use the name
-      of the current workspace directory/folder as the project_name.
-    - **Chat-only client** (Claude Desktop, ChatGPT, etc.): If the user is
-      talking about a specific project, ask once or infer from context. If
-      unsure, call `list_projects` first to see existing project names and
-      pick the matching one.
-    - **Never guess a new name** if one already exists — always check
-      `list_projects` before inventing a project name.
+    ## How to resolve the project_name (Session Locking & Ambiguity)
+    - **No Ambiguity (IDE/Filesystem)**: If you can reliably determine the project from the workspace folder name or Git remote, auto-match and use it silently.
+    - **Ambiguity (Chat Client / Multiple Projects)**: On the first ambiguous `remember` or `recall` call, DO NOT GUESS. Call `list_projects()` and explicitly ask the user to choose (e.g., "I found these existing projects... Which one are we working on today?").
+    - **Session Lock**: Once the user selects a project, or it is auto-matched, lock that `project_name` for all subsequent calls in the current session.
+    - **New Project**: When saving to a new project name for the first time, explicitly confirm it with the user (e.g., "I've created a new project memory space called X. All facts from this session will be saved under this project.").
 
     Args:
         content: The fact, e.g. "Project uses PostgreSQL as primary database."
@@ -141,9 +137,8 @@ def ingest_conversation(
     against existing memory. Dead ends, chit-chat, and corrected mistakes are
     discarded automatically.
 
-    ## How to choose the project_name
-    Same as ``remember``: use the workspace folder name in IDEs. In chat
-    clients, call ``list_projects`` first if unsure.
+    ## How to resolve the project_name
+    Same as `remember`: auto-match if unambiguous. If ambiguous, call `list_projects()` and explicitly ask the user to choose. Once chosen, session-lock it.
 
     Args:
         conversation: The raw text to distill — can be a chat transcript, your
@@ -182,10 +177,8 @@ def recall(
     on: search broadly, read the project names in the results, and use the
     correct name for follow-up calls.
 
-    ## How to choose the project_name
-    Same as ``remember``: use the workspace folder name in IDEs. In chat
-    clients, call ``list_projects`` first if unsure, or leave it blank to
-    search everything.
+    ## How to resolve the project_name
+    Same as `remember`: auto-match if unambiguous. If ambiguous (e.g. chat client with no filesystem), call `list_projects()` and explicitly ask the user which project they want to search, or leave it blank to search everything. Once chosen, lock it for the session.
 
     Args:
         query: What you need context about (the user's request/topic).
@@ -232,9 +225,8 @@ def get_project_context(
     domain terms, and status — grouped by category. Much richer than ``recall``
     which returns a flat ranked list for a specific query.
 
-    ## How to choose the project_name
-    Same as ``remember``: use the workspace folder name in IDEs. In chat
-    clients, call ``list_projects`` first to find the right name.
+    ## How to resolve the project_name
+    Same as `remember`: auto-match if unambiguous. If ambiguous, call `list_projects()` and explicitly ask the user to choose. Once chosen, session-lock it.
 
     Args:
         project_name: Project name to search within. Also includes global
@@ -270,9 +262,8 @@ def ingest_codebase_summary(
     Ideal for onboarding: describe your project once, and every future session
     (across all connected tools) will already have the context.
 
-    ## How to choose the project_name
-    Same as ``remember``: use the workspace folder name in IDEs. In chat
-    clients, call ``list_projects`` first if unsure.
+    ## How to resolve the project_name
+    Same as `remember`: auto-match if unambiguous. If ambiguous, call `list_projects()` and explicitly ask the user to choose. Once chosen, session-lock it.
 
     Args:
         summary: A description of the codebase/project. Can be multi-paragraph.
@@ -336,9 +327,8 @@ def list_memories(
     Set ``include_inactive`` to also show superseded/expired facts (useful for
     auditing how beliefs changed over time).
 
-    ## How to choose the project_name
-    Same as ``remember``: use the workspace folder name in IDEs. In chat
-    clients, call ``list_projects`` first if unsure.
+    ## How to resolve the project_name
+    Same as `remember`: auto-match if unambiguous. If ambiguous, call `list_projects()` and explicitly ask the user to choose. Once chosen, session-lock it.
     """
     memories = _manager.list_memories(project_name=project_name, include_inactive=include_inactive)
     return {"count": len(memories), "memories": [m.summary() for m in memories]}
