@@ -1,11 +1,10 @@
-"""Production vector-database backend using ChromaDB (optional).
+"""Production vector-database backend using ChromaDB.
 
-Selected via ``MEMMCP_VECTOR_BACKEND=chroma`` after
-``pip install memmcp[chroma]``. The full :class:`~memmcp.models.Memory` is
-stored as a JSON payload in Chroma metadata, while ``project_name`` is kept as
-a filterable field so nearest-neighbour search can be constrained server-side.
-Active/expiry filtering is applied in Python after retrieval because a memory
-can expire purely by the passage of time (no write to flip a flag).
+The full :class:`~memmcp.models.Memory` is stored as a JSON payload in Chroma
+metadata, while ``project_name`` is kept as a filterable field so
+nearest-neighbour search can be constrained server-side. Active/expiry
+filtering is applied in Python after retrieval because a memory can expire
+purely by the passage of time (no write to flip a flag).
 """
 
 from __future__ import annotations
@@ -23,10 +22,9 @@ class ChromaVectorStore(VectorStore):
     def __init__(self, path: Path, collection_name: str = "memmcp") -> None:
         try:
             import chromadb
-        except ImportError as exc:  # pragma: no cover - optional dep
+        except ImportError as exc:
             raise ImportError(
-                "chromadb is not installed. Run `pip install memmcp[chroma]` "
-                "or set MEMMCP_VECTOR_BACKEND=numpy."
+                "chromadb is not installed. Run `pip install chromadb`."
             ) from exc
 
         self._client = chromadb.PersistentClient(path=str(path))
@@ -63,7 +61,8 @@ class ChromaVectorStore(VectorStore):
         res = self._collection.get(ids=[memory_id], include=["metadatas", "embeddings"])
         if not res["ids"]:
             return None
-        emb = res["embeddings"][0] if res.get("embeddings") is not None else None
+        embs = res.get("embeddings")
+        emb = list(embs[0]) if embs is not None and len(embs) > 0 else None
         return self._decode(res["metadatas"][0], emb)
 
     def delete(self, memory_id: str) -> bool:
@@ -153,7 +152,11 @@ class ChromaVectorStore(VectorStore):
         else:
             where = None
         res = self._collection.get(where=where, include=["metadatas", "embeddings"])
-        embeddings = res.get("embeddings") or [None] * len(res["ids"])
+        embs = res.get("embeddings")
+        if embs is None or len(embs) == 0:
+            embeddings = [None] * len(res["ids"])
+        else:
+            embeddings = embs
         out: list[Memory] = []
         for meta, emb in zip(res["metadatas"], embeddings):
             mem = self._decode(meta, list(emb) if emb is not None else None)

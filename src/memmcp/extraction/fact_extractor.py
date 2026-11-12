@@ -1,12 +1,7 @@
 """Fact extraction: conversation -> candidate distilled facts.
 
-Two providers share one interface:
-
-* LLM extractors (:func:`build_extractor` returns these when configured) —
-  prompt an OpenAI/Anthropic model with a JSON-validated template.  These are
-  the **recommended production path** — they extract architecture, modules,
-  workflows, decisions, domain concepts, and project status in addition to
-  tech stack facts.
+Uses an OpenAI chat model to extract architecture, modules, workflows,
+decisions, domain concepts, and project status from conversations.
 
 All extractors return :class:`ExtractedFact` objects; storage, dedup and
 conflict resolution happen later in the manager/distiller.
@@ -34,10 +29,8 @@ class ExtractedFact:
     tags: list[str] = field(default_factory=list)
 
 
-
-
 # --------------------------------------------------------------------------
-# LLM extractors (optional). They share the ExtractedFact contract.
+# LLM extraction prompt
 # --------------------------------------------------------------------------
 _LLM_PROMPT = """\
 You are a **Project Knowledge Extractor**. Your job is to extract durable, \
@@ -297,6 +290,14 @@ def _parse_llm_json(text: str) -> list[ExtractedFact]:
     return facts
 
 
+def _conversation_to_text(conversation: str | list[dict]) -> str:
+    if isinstance(conversation, list):
+        return "\n".join(
+            f"{t.get('role', 'user')}: {t.get('content', '')}" for t in conversation
+        )
+    return str(conversation)
+
+
 class OpenAIExtractor:
     """Fact extraction via an OpenAI chat model."""
 
@@ -317,51 +318,6 @@ class OpenAIExtractor:
         return _parse_llm_json(resp.choices[0].message.content or "")
 
 
-class AnthropicExtractor:
-    """Fact extraction via an Anthropic (Claude) model."""
-
-    def __init__(self, model: str, api_key: str | None, settings: Settings) -> None:
-        import anthropic  # lazy import
-
-        self._client = anthropic.Anthropic(api_key=api_key)
-        self._model = model
-        self._settings = settings
-
-    def extract(self, conversation: str | list[dict]) -> list[ExtractedFact]:
-        blob = _conversation_to_text(conversation)
-        resp = self._client.messages.create(
-            model=self._model,
-            max_tokens=self._settings.extraction_max_tokens,
-            messages=[{"role": "user", "content": _LLM_PROMPT.format(conversation=blob)}],
-        )
-        text = "".join(block.text for block in resp.content if block.type == "text")
-        return _parse_llm_json(text)
-
-
-def _conversation_to_text(conversation: str | list[dict]) -> str:
-    if isinstance(conversation, list):
-        return "\n".join(
-            f"{t.get('role', 'user')}: {t.get('content', '')}" for t in conversation
-        )
-    return str(conversation)
-
-
-class RuleExtractor:
-    """A naive rule-based extractor for offline tests."""
-    def extract(self, conversation: str | list[dict]) -> list[ExtractedFact]:
-        text = _conversation_to_text(conversation)
-        # Just split by dot and return naive facts.
-        sentences = [s.strip() for s in text.split(".") if s.strip()]
-        return [ExtractedFact(content=s + ".") for s in sentences]
-
-
-def build_extractor(settings: Settings):
-    """Build the configured extractor."""
-    provider = settings.extraction_provider
-    if provider == "rule":
-        return RuleExtractor()
-    if provider == "openai":
-        return OpenAIExtractor(settings.extraction_model, settings.openai_api_key, settings)
-    if provider == "anthropic":
-        return AnthropicExtractor(settings.extraction_model, settings.anthropic_api_key, settings)
-    raise ValueError(f"Unknown extraction provider: {provider}")
+def build_extractor(settings: Settings) -> OpenAIExtractor:
+    """Build the OpenAI fact extractor."""
+    return OpenAIExtractor(settings.extraction_model, settings.openai_api_key, settings)

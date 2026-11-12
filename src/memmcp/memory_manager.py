@@ -1,14 +1,14 @@
 """MemoryManager — the brain that wires every subsystem together.
 
-This is the pipeline the resume describes:
+This is the pipeline:
 
     ingest -> extract -> PII filter -> embed -> distill (dedup/conflict)
            -> store -> (later) retrieve -> rank -> token-budget -> audit
 
 Everything above (embeddings, store, ranker, extractor, distiller, privacy)
-is pluggable; this class orchestrates them and enforces project isolation
-+ governance.  It is transport-agnostic, so it is exercised directly by
-tests and wrapped by the MCP server in :mod:`memmcp.server`.
+is wired together here. This class orchestrates them and enforces project
+isolation + governance. It is transport-agnostic, so it is exercised directly
+by tests and wrapped by the MCP server in :mod:`memmcp.server`.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ class MemoryManager:
         self.settings.ensure_dirs()
 
         self.embedder = build_embedder(self.settings)
-        self.store = build_store(self.settings) 
+        self.store = build_store(self.settings)
         self.ranker = Ranker(
             weights=self.settings.ranking_weights(),
             recency_halflife_days=self.settings.recency_halflife_days,
@@ -472,10 +472,7 @@ class MemoryManager:
             "with_pii": sum(1 for m in active if m.pii_types),
             "by_project": by_project,
             "by_category": by_category,
-            "embedding_provider": self.settings.embedding_provider,
             "embedding_dim": self.embedder.dim,
-            "vector_backend": self.settings.vector_backend,
-            "extraction_provider": self.settings.extraction_provider,
             "pii_policy": self.settings.pii_policy,
         }
 

@@ -1,8 +1,6 @@
-"""Pluggable vector stores.
+"""ChromaDB-backed vector store.
 
-The default :class:`NumpyVectorStore` persists to a JSON file and needs only
-numpy — perfect for local use and tests. Install ``chromadb`` to switch to a
-production vector database with the same interface.
+Install ``chromadb`` (included in core dependencies) to use.
 """
 
 from .base import VectorStore

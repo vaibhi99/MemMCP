@@ -18,21 +18,11 @@ dependencies = [
     "pydantic-settings>=2.2",
     "numpy>=1.26",
     "python-dotenv>=1.0",
+    "chromadb>=0.5",
+    "openai>=1.30",
 ]
 
 [project.optional-dependencies]
-# Production-grade backends. The server works fully offline without these,
-# then transparently upgrades when a backend is installed + configured.
-chroma = ["chromadb>=0.5"]
-local-embed = ["sentence-transformers>=2.7"]
-openai = ["openai>=1.30"]
-anthropic = ["anthropic>=0.30"]
-full = [
-    "chromadb>=0.5",
-    "sentence-transformers>=2.7",
-    "openai>=1.30",
-    "anthropic>=0.30",
-]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5"]
 
 [project.scripts]

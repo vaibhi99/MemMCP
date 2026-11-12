@@ -3,7 +3,7 @@
 When two memories land in the similarity grey zone (between the dedup and
 conflict thresholds), cosine distance alone cannot distinguish "same topic,
 compatible facts" from "same topic, contradictory update".  This module
-delegates that decision to a lightweight LLM call.
+delegates that decision to a lightweight OpenAI LLM call.
 
 The judge answers one question: **does the new fact contradict and replace
 the existing fact, or can both coexist?**
@@ -11,11 +11,6 @@ the existing fact, or can both coexist?**
 Two outcomes:
 * ``CONTRADICTION`` → the distiller should **supersede** the old memory.
 * ``COMPATIBLE``    → the distiller should **create** a new memory alongside.
-
-Design choices:
-* Small, structured prompt → minimal latency (~200-400 ms with gpt-4o-mini).
-* JSON output with a one-sentence reason for audit trail.
-* Graceful fallback: if the LLM call fails, default to "create" (safe side).
 """
 
 from __future__ import annotations
@@ -87,7 +82,7 @@ def _parse_judge_response(text: str) -> JudgeResult:
 
 
 class ConflictJudge:
-    """LLM-backed judge that resolves ambiguous similarity-zone conflicts.
+    """OpenAI-backed judge that resolves ambiguous similarity-zone conflicts.
 
     Instantiated once by :class:`~memmcp.memory_manager.MemoryManager` and
     called from :meth:`Distiller.decide` when a candidate falls inside the
@@ -96,20 +91,13 @@ class ConflictJudge:
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._provider = settings.extraction_provider
         self._model = settings.judge_model
-        self._client: object | None = None
+        self._client = None
 
-    def _get_openai_client(self):
+    def _get_client(self):
         if self._client is None:
             from openai import OpenAI
             self._client = OpenAI(api_key=self._settings.openai_api_key)
-        return self._client
-
-    def _get_anthropic_client(self):
-        if self._client is None:
-            import anthropic
-            self._client = anthropic.Anthropic(api_key=self._settings.anthropic_api_key)
         return self._client
 
     def judge(self, existing_fact: str, new_fact: str) -> JudgeResult:
@@ -124,19 +112,7 @@ class ConflictJudge:
             new_fact=new_fact,
         )
         try:
-            if self._provider == "openai":
-                return self._call_openai(prompt)
-            elif self._provider == "anthropic":
-                return self._call_anthropic(prompt)
-            else:
-                logger.warning(
-                    "Unknown judge provider %r; defaulting to COMPATIBLE.",
-                    self._provider,
-                )
-                return JudgeResult(
-                    verdict="COMPATIBLE",
-                    reason=f"unsupported provider: {self._provider}",
-                )
+            return self._call_openai(prompt)
         except Exception:
             logger.exception("LLM judge call failed; defaulting to COMPATIBLE.")
             return JudgeResult(
@@ -145,7 +121,7 @@ class ConflictJudge:
             )
 
     def _call_openai(self, prompt: str) -> JudgeResult:
-        client = self._get_openai_client()
+        client = self._get_client()
         resp = client.chat.completions.create(
             model=self._model,
             messages=[{"role": "user", "content": prompt}],
@@ -153,14 +129,4 @@ class ConflictJudge:
             max_tokens=150,
         )
         text = resp.choices[0].message.content or ""
-        return _parse_judge_response(text)
-
-    def _call_anthropic(self, prompt: str) -> JudgeResult:
-        client = self._get_anthropic_client()
-        resp = client.messages.create(
-            model=self._model,
-            max_tokens=150,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = "".join(block.text for block in resp.content if block.type == "text")
         return _parse_judge_response(text)

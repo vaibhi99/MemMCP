@@ -7,11 +7,11 @@ The package is organised into focused sub-systems:
 
     config          Environment-driven settings.
     models          Core data types (Memory, ScoredMemory, results).
-    embeddings/     Pluggable embedding providers (hash, local, OpenAI).
-    store/          Pluggable vector stores (numpy, Chroma).
+    embeddings/     OpenAI embedding provider.
+    store/          ChromaDB vector store.
     retrieval/      Relevance + recency + importance ranking.
-    extraction/     Fact extraction and distillation (dedup, conflicts).
-    privacy/        PII detection/redaction and audit logging.
+    extraction/     OpenAI-powered fact extraction and distillation.
+    privacy/        Regex PII detection/redaction and audit logging.
     memory_manager  The orchestrator wiring everything together.
     server          The MCP server exposing tools to LLM clients.
 """

@@ -5,8 +5,9 @@ it verbatim re-teaches the model your *mistakes*, not your *conclusions*. This
 package turns conversation into durable, self-contained facts and keeps the
 memory set clean over time:
 
-* :class:`FactExtractor` — conversation -> candidate facts (rule-based offline,
-  LLM-based when configured).
+* :class:`OpenAIExtractor` — prompts an OpenAI model with a JSON-validated
+  template to extract architecture, modules, workflows, decisions, domain
+  concepts, and project status.
 * :class:`Distiller` — dedup near-identical facts and detect conflicts so
   updated beliefs ("moved to Go") supersede stale ones ("uses Postgres").
 * :class:`ConflictJudge` — LLM-backed judge for the ambiguity zone where
@@ -25,4 +26,3 @@ __all__ = [
     "JudgeResult",
     "build_extractor",
 ]
-

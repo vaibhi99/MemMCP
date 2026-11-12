@@ -1,11 +1,7 @@
-"""Pluggable embedding providers.
+"""OpenAI-powered embedding provider.
 
-The default :class:`HashEmbedder` is deterministic and dependency-free, so the
-whole server works offline and tests are reproducible. Install extras to swap
-in higher-quality embeddings without changing any calling code:
-
-    MEMMCP_EMBEDDING_PROVIDER=sentence-transformers   # local model
-    MEMMCP_EMBEDDING_PROVIDER=openai                  # hosted API
+Set ``OPENAI_API_KEY`` and optionally ``MEMMCP_EMBEDDING_MODEL``
+(defaults to ``text-embedding-3-small``).
 """
 
 from .base import Embedder, cosine_similarity

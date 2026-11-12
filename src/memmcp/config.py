@@ -1,23 +1,16 @@
 """Environment-driven configuration for MemMCP.
 
-Every setting has a safe default so the server runs fully offline with no
-configuration at all. Override via environment variables (prefixed ``MEMMCP_``)
-or a ``.env`` file. See ``.env.example`` for the full list.
+Override via environment variables (prefixed ``MEMMCP_``) or a ``.env`` file.
+See ``.env.example`` for the full list.
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-EmbeddingProvider = Literal["hash", "sentence-transformers", "openai"]
-VectorBackend = Literal["numpy", "chroma"]
-ExtractionProvider = Literal["openai", "anthropic", "rule"]
-PIIPolicy = Literal["block", "redact", "flag", "off"]
 
 
 class Settings(BaseSettings):
@@ -33,16 +26,11 @@ class Settings(BaseSettings):
     # ---- Storage ----
     data_dir: Path = Field(default=Path("./.memmcp_data"))
 
-    # ---- Embeddings ----
-    embedding_provider: EmbeddingProvider = "hash"
-    embedding_dim: int = 384
-    embedding_model: str = "all-MiniLM-L6-v2"
+    # ---- Embeddings (OpenAI only) ----
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dim: int = 1536
 
-    # ---- Vector store ----
-    vector_backend: VectorBackend = "numpy"
-
-    # ---- Fact extraction ----
-    extraction_provider: ExtractionProvider = "openai"
+    # ---- Fact extraction (OpenAI only) ----
     extraction_model: str = "gpt-4o-mini"
     extraction_temperature: float = 0.0
     extraction_max_tokens: int = 2048
@@ -62,11 +50,10 @@ class Settings(BaseSettings):
     judge_model: str = "gpt-4o-mini"
 
     # ---- Privacy ----
-    pii_policy: PIIPolicy = "redact"
+    pii_policy: str = "redact"
 
-    # ---- API keys (read without the MEMMCP_ prefix) ----
+    # ---- API key ----
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
-    anthropic_api_key: str | None = Field(default=None, alias="ANTHROPIC_API_KEY")
 
     @field_validator("data_dir")
     @classmethod
