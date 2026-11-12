@@ -206,7 +206,3 @@ NLP (fact/entity extraction, distillation, dedup, conflict detection, PII) ·
 Data (vector DBs, indexing, scoping, versioning, TTL/decay) · Systems (state,
 caching, persistence) · Security (access scoping, PII governance, audit) · LLM
 engineering (tool-calling design, token/cost optimisation).
-
-## License
-
-MIT
