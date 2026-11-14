@@ -380,6 +380,26 @@ def audit_resource() -> list[dict[str, Any]]:
     return _manager.audit_tail(limit=100)
 
 
+# ==========================================================================
+# HTTP endpoints (for health checks and cloud status discovery)
+# ==========================================================================
+@mcp.custom_route("/", methods=["GET", "HEAD"])
+async def root_endpoint(request: Any) -> Any:
+    from starlette.responses import JSONResponse
+    return JSONResponse({
+        "status": "ok",
+        "name": "memmcp",
+        "sse_endpoint": "/sse",
+        "messages_endpoint": "/messages",
+    })
+
+
+@mcp.custom_route("/health", methods=["GET", "HEAD"])
+async def health_endpoint(request: Any) -> Any:
+    from starlette.responses import JSONResponse
+    return JSONResponse({"status": "healthy"})
+
+
 def main() -> None:
     """Entry point: run the MCP server over stdio or SSE (for cloud deployment)."""
     import os
@@ -391,6 +411,10 @@ def main() -> None:
         host = os.getenv("HOST", "0.0.0.0")
         mcp.settings.host = host
         mcp.settings.port = port
+        # Cloud platforms use arbitrary hostnames (e.g. *.onrender.com);
+        # disable localhost-only DNS rebinding filter so cloud clients can connect.
+        if hasattr(mcp.settings, "transport_security") and mcp.settings.transport_security:
+            mcp.settings.transport_security.enable_dns_rebinding_protection = False
         mcp.run(transport="sse")
     else:
         mcp.run(transport="stdio")
