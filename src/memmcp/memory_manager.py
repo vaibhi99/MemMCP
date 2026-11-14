@@ -73,6 +73,7 @@ class MemoryManager:
         tags: list[str] | None = None,
         source: str = "manual",
         ttl_days: float | None = None,
+        capture_policy: str = "automatic",
         actor: str = "unknown",
     ) -> AddResult:
         """Store a single fact, applying PII policy + distillation."""
@@ -88,7 +89,7 @@ class MemoryManager:
             if policy == "block":
                 self.audit.record(
                     "store_blocked", actor=actor, project_name=project_name,
-                    details={"pii": result.types},
+                    details={"pii": result.types, "capture_policy": capture_policy},
                 )
                 return AddResult("blocked", None, note=f"PII detected: {result.types}")
             if policy == "redact":

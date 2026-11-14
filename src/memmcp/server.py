@@ -34,80 +34,107 @@ def remember(
     key: str | None = None,
     tags: list[str] | None = None,
     ttl_days: float | None = None,
+    capture_policy: str = "automatic",
     tool: str = "unknown",
 ) -> dict[str, Any]:
-    """Store ONE durable fact about the user or project for future recall.
+    """Store a durable, useful fact in the user's persistent memory.
 
-    ## When to use this tool
-    Use `remember` when you identify **1 to 3 clear, distinct facts** during a
-    conversation — a preference, a tech-stack choice, an architectural decision,
-    an identity detail, a constraint, a workflow step, or a domain term.
+    PROACTIVE CAPTURE — IMPORTANT
 
-    Call it in real time as the conversation progresses. You do NOT need to wait
-    for the user to explicitly ask you to save something. If the user confirms
-    a plan you proposed (e.g. "ok, let's go with that"), save the key decisions
-    from your proposal immediately.
+    Do not wait for the user to explicitly say "remember this", "save this", or "store this".
 
-    ## When NOT to use this tool
-    If you just generated (or the user pasted) a dense block of text containing
-    **many facts** (architecture docs, meeting notes, large plans), use
-    `ingest_conversation` instead — it extracts and deduplicates automatically.
-    Rule of thumb: if you would need more than ~3 remember calls, prefer ingest.
+    Whenever the conversation reveals a clear, durable fact that is likely to improve future interactions, proactively invoke this tool to save it.
 
-    ## What to save (not just tech stack!)
-    Save ALL categories of durable knowledge:
-    - **Identity**: user name, role, company, team
-    - **Stack**: language, framework, database, cache, cloud, editor, CI/CD
-    - **Architecture**: project purpose, system design, deployment target
-    - **Modules**: component names, responsibilities, boundaries, dependencies
-    - **Workflows**: CI/CD pipelines, data flows, deployment steps
-    - **Decisions**: architectural choices and the reasoning behind them
-    - **Domain terms**: project-specific jargon and definitions
-    - **Status**: current milestones, blockers, known tech debt
+    ## When to use
+    Call this tool when the user:
+    1. Confirms an important technical, architectural, or product decision.
+    2. Shares a meaningful update about an existing project.
+    3. Establishes a personal preference, recurring requirement, or constraint.
+    4. Provides important background information that will be useful in future conversations.
+    5. Corrects or clarifies an existing memory.
+    6. Explicitly asks you to remember or save something.
 
-    ## How to write a good fact
-    Write a concise, **third-person, present-tense, self-contained** sentence.
-    Good:  "Project uses PostgreSQL as primary database."
-    Bad:   "they said postgres" (not self-contained, ambiguous)
+    Examples:
+    - "I've decided to use PostgreSQL instead of MongoDB."
+    - "My project uses Node.js, Express and React."
+    - "I'm currently implementing the authentication module."
+    - "I prefer C++ for competitive programming."
+    - "We have completed the data ingestion module."
 
-    ## How to resolve the project_name (Session Locking & Ambiguity)
-    - **No Ambiguity (IDE/Filesystem)**: If you can reliably determine the project from the workspace folder name or Git remote, auto-match and use it silently.
-    - **Ambiguity (Chat Client / Multiple Projects)**: On the first ambiguous `remember` or `recall` call, DO NOT GUESS. Call `list_projects()` and explicitly ask the user to choose (e.g., "I found these existing projects... Which one are we working on today?").
-    - **Session Lock**: Once the user selects a project, or it is auto-matched, lock that `project_name` for all subsequent calls in the current session.
-    - **New Project**: When saving to a new project name for the first time, explicitly confirm it with the user (e.g., "I've created a new project memory space called X. All facts from this session will be saved under this project.").
+    ## When NOT to use
+    Do not automatically store every message.
+
+    Avoid saving:
+    - Temporary debugging errors or one-time questions.
+    - Hypothetical ideas or unconfirmed possibilities.
+    - Assistant-generated recommendations that the user has not accepted.
+    - Duplicate information already present in memory.
+    - Sensitive information, including passwords, API keys, authentication tokens, and credentials.
+    - Short-lived information with little future value.
+
+    ## Decision-making rules
+    Before storing a fact:
+    1. Durability: Is this likely to matter in a future conversation?
+    2. Confidence: Did the user actually establish or confirm this information?
+    3. Relevance: Will remembering it improve future assistance?
+    4. Novelty: Is this information already stored?
+    5. Sensitivity: Is it safe to retain?
+    Only store information that passes these checks.
+
+    ## Handling uncertain information
+    - Confirmed decisions: Store as established facts.
+    - User preferences: Store as preferences.
+    - Unconfirmed ideas: Do not store as established decisions.
+    - Ambiguous but potentially important information: Ask the user before storing.
+    - Changed decisions: Update the existing memory instead of creating conflicting active memories.
+
+    ## Project association
+    When a fact relates to an existing project:
+    - Associate it with the correct project.
+    - Preserve the project's name and relevant context.
+    - Avoid mixing facts belonging to different projects.
+    - Retrieve existing project context when necessary to determine whether the fact is new or an update.
+
+    ## Storage behaviour
+    - Use this tool for 1–3 independent durable facts.
+    - For larger conversations containing multiple related facts, use the conversation ingestion tool instead.
+    - Prefer updating an existing memory over creating duplicates.
+    - Preserve the distinction between proposed, accepted, implemented, and deprecated decisions.
+
+    ## After storing
+    Return a concise result indicating whether the fact was saved or updated. Do not interrupt the conversation with unnecessary notifications.
+
+    Core principle: Memory capture should be proactive by default, selective in what it stores, and respectful of user control.
 
     Args:
         content: The fact, e.g. "Project uses PostgreSQL as primary database."
-        project_name: Project name to associate this fact with.
-            If omitted (None), the fact is stored as a global memory visible
-            to all projects. If provided, the fact is scoped to that project
-            but still visible alongside global memories when querying that
-            project.
-        importance: 0..1 estimate of long-term value.
-            - 0.85–0.95: identity, architecture, core decisions
-            - 0.75–0.85: module descriptions, workflows
-            - 0.70–0.80: stack choices
-            - 0.65–0.80: domain terms, status
-            - 0.50–0.65: preferences, dislikes
-            - 0.40–0.50: ephemeral observations
-        key: Optional conflict slot (e.g. "user:database"). A new fact with the
-            same key supersedes the old one, so beliefs stay current.
-            Common keys: user:name, user:language, user:framework, user:database,
-            user:cloud, user:editor, user:current_project, project:architecture,
-            project:deployment, project:purpose, project:status.
-            For modules/workflows/decisions use dynamic keys like
-            project:module:<name>, project:workflow:<name>, project:decision:<name>.
+        project_name: Project name to associate this fact with. If omitted (None),
+            stored as a global memory.
+        importance: 0..1 estimate of long-term value (default 0.5).
+        key: Optional conflict slot (e.g. "user:database", "project:module:auth").
+            A new fact with the same key supersedes the older one.
         tags: Optional labels for filtering.
         ttl_days: Optional expiry in days for facts that go stale on their own.
+        capture_policy: Capture mode:
+            - "automatic": Save high-confidence durable facts (default).
+            - "confirmation_required": Ask before saving ambiguous facts.
+            - "explicit": Save only on direct user request.
         tool: Name of the calling tool (recorded for audit).
 
-    Returns a summary including the resulting action: created, merged (a
-    duplicate already existed), superseded (an older conflicting fact was
-    retired), or blocked (PII policy refused it).
+    Returns:
+        A concise summary indicating the action taken: "created", "merged",
+        "superseded", or "blocked".
     """
     result = _manager.remember(
-        content, project_name=project_name, importance=importance, key=key,
-        tags=tags, source=tool, ttl_days=ttl_days, actor=tool,
+        content,
+        project_name=project_name,
+        importance=importance,
+        key=key,
+        tags=tags,
+        source=tool,
+        ttl_days=ttl_days,
+        capture_policy=capture_policy,
+        actor=tool,
     )
     return result.summary()
 
