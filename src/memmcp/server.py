@@ -381,8 +381,19 @@ def audit_resource() -> list[dict[str, Any]]:
 
 
 def main() -> None:
-    """Entry point: run the MCP server over stdio."""
-    mcp.run()
+    """Entry point: run the MCP server over stdio or SSE (for cloud deployment)."""
+    import os
+
+    transport = os.getenv("MCP_TRANSPORT", "").lower()
+    # When deployed to cloud platforms (like Render), PORT is automatically set
+    if transport == "sse" or (transport != "stdio" and os.getenv("PORT")):
+        port = int(os.getenv("PORT", "8000"))
+        host = os.getenv("HOST", "0.0.0.0")
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.run(transport="sse")
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

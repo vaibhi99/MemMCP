@@ -1,32 +1,40 @@
-"""OpenAI embedding provider."""
+"""Gemini embedding provider using LangChain."""
 
 from __future__ import annotations
 
 from .base import Embedder, normalize
 
 
-class OpenAIEmbedder(Embedder):
-    """Hosted embeddings via the OpenAI API.
+class GeminiEmbedder(Embedder):
+    """Hosted embeddings via Google Generative AI using LangChain.
 
-    Requires ``openai`` package and ``OPENAI_API_KEY`` to be set.
+    Requires ``langchain-google-genai`` and ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``).
     """
 
-    _DIMS = {
-        "text-embedding-3-small": 1536,
-        "text-embedding-3-large": 3072,
-        "text-embedding-ada-002": 1536,
-    }
+    def __init__(
+        self,
+        model_name: str = "models/text-embedding-004",
+        api_key: str | None = None,
+        dim: int = 768,
+    ) -> None:
+        try:
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+        except ImportError as exc:
+            raise ImportError(
+                "langchain-google-genai is not installed. Run `pip install langchain-google-genai`."
+            ) from exc
 
-    def __init__(self, model_name: str = "text-embedding-3-small", api_key: str | None = None):
-        from openai import OpenAI
-
-        self._client = OpenAI(api_key=api_key)
         self._model_name = model_name
-        self.dim = self._DIMS.get(model_name, 1536)
+        self.dim = dim
+        self._embeddings = GoogleGenerativeAIEmbeddings(
+            model=model_name,
+            google_api_key=api_key,
+        )
 
     def embed(self, text: str) -> list[float]:
-        return self.embed_batch([text])[0]
+        vec = self._embeddings.embed_query(text)
+        return normalize(vec)
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        resp = self._client.embeddings.create(model=self._model_name, input=texts)
-        return [normalize(item.embedding) for item in resp.data]
+        vecs = self._embeddings.embed_documents(texts)
+        return [normalize(v) for v in vecs]

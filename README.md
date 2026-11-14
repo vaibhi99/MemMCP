@@ -86,10 +86,10 @@ Every component is a **pluggable interface** with an offline default, so the who
 
 | Layer | Technology |
 | --- | --- |
-| Embeddings | OpenAI `text-embedding-3-small` (1536-dim) |
+| Embeddings | Gemini `models/text-embedding-004` (768-dim) via LangChain |
 | Vector store | ChromaDB (persistent HNSW cosine index) |
-| Fact extraction | OpenAI `gpt-4o-mini` with structured JSON schema |
-| Conflict judge | OpenAI `gpt-4o-mini` (binary contradiction classifier) |
+| Fact extraction | Gemini `gemini-1.5-flash` via LangChain (`ChatGoogleGenerativeAI`) |
+| Conflict judge | Gemini `gemini-1.5-flash` via LangChain (binary contradiction classifier) |
 | Privacy | Regex-based PII scanner + append-only JSONL audit log |
 
 ---
@@ -135,8 +135,7 @@ For **Claude Desktop**, add this to your `claude_desktop_config.json`:
       "command": "python",
       "args": ["-m", "memmcp.server"],
       "env": {
-        "MEMMCP_EXTRACTION_PROVIDER": "openai",
-        "OPENAI_API_KEY": "sk-..."
+        "GEMINI_API_KEY": "AIzaSy..."
       }
     }
   }
@@ -344,8 +343,8 @@ MEMMCP_CONFLICT_THRESHOLD=0.60            # cosine sim for grey zone (judge)
 # Privacy
 MEMMCP_PII_POLICY=redact                  # block | redact | flag | off
 
-# API key (required)
-OPENAI_API_KEY=sk-...
+# API key (reads GEMINI_API_KEY or GOOGLE_API_KEY)
+GEMINI_API_KEY=your_gemini_api_key_here
 ```
 
 ---
@@ -360,7 +359,7 @@ src/memmcp/
 ├── models.py              # Memory, ScoredMemory, AddResult, IngestResult
 ├── embeddings/
 │   ├── base.py            # Embedder ABC + cosine_similarity + normalize
-│   ├── providers.py       # OpenAI embedder
+│   ├── providers.py       # Gemini embedder (via LangChain)
 │   └── factory.py         # build_embedder(settings)
 ├── store/
 │   ├── base.py            # VectorStore ABC
@@ -369,9 +368,9 @@ src/memmcp/
 ├── retrieval/
 │   └── ranker.py          # Hybrid ranking + greedy token-budget packing
 ├── extraction/
-│   ├── fact_extractor.py  # OpenAI-powered fact extraction with key normalisation
+│   ├── fact_extractor.py  # Gemini-powered fact extraction with key normalisation (via LangChain)
 │   ├── distiller.py       # Dedup / merge / supersede decision logic
-│   └── conflict_judge.py  # LLM-backed grey-zone contradiction detector
+│   └── conflict_judge.py  # LangChain Gemini-backed grey-zone contradiction detector
 └── privacy/
     ├── pii.py             # Regex PII scanner (email, keys, cards, SSN, ...)
     └── audit.py           # Append-only JSONL audit log

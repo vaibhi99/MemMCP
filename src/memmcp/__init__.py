@@ -7,10 +7,10 @@ The package is organised into focused sub-systems:
 
     config          Environment-driven settings.
     models          Core data types (Memory, ScoredMemory, results).
-    embeddings/     OpenAI embedding provider.
+    embeddings/     Gemini embedding provider (via LangChain).
     store/          ChromaDB vector store.
     retrieval/      Relevance + recency + importance ranking.
-    extraction/     OpenAI-powered fact extraction and distillation.
+    extraction/     Gemini-powered fact extraction and distillation (via LangChain).
     privacy/        Regex PII detection/redaction and audit logging.
     memory_manager  The orchestrator wiring everything together.
     server          The MCP server exposing tools to LLM clients.

@@ -10,16 +10,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Vaibhav Kamboj" }]
-keywords = ["mcp", "model-context-protocol", "memory", "llm", "vector-search", "rag"]
+keywords = ["mcp", "model-context-protocol", "memory", "llm", "vector-search", "rag", "langchain", "gemini"]
 
 dependencies = [
-    "mcp>=1.2.0",
+    "mcp>=1.2.0,<2.0.0",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
     "numpy>=1.26",
     "python-dotenv>=1.0",
     "chromadb>=0.5",
-    "openai>=1.30",
+    "langchain-google-genai>=2.0.0",
+    "langchain-core>=0.3.0",
 ]
 
 [project.optional-dependencies]

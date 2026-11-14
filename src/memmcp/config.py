@@ -9,7 +9,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,12 +26,12 @@ class Settings(BaseSettings):
     # ---- Storage ----
     data_dir: Path = Field(default=Path("./.memmcp_data"))
 
-    # ---- Embeddings (OpenAI only) ----
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dim: int = 1536
+    # ---- Embeddings (Gemini via LangChain) ----
+    embedding_model: str = "gemini-embedding-001"
+    embedding_dim: int = 3072
 
-    # ---- Fact extraction (OpenAI only) ----
-    extraction_model: str = "gpt-4o-mini"
+    # ---- Fact extraction (Gemini via LangChain) ----
+    extraction_model: str = "gemini-3.5-flash-lite"
     extraction_temperature: float = 0.0
     extraction_max_tokens: int = 2048
 
@@ -45,15 +45,27 @@ class Settings(BaseSettings):
     dedup_threshold: float = 0.92
     conflict_threshold: float = 0.60
 
-    # ---- LLM Conflict Judge ----
+    # ---- LLM Conflict Judge (Gemini via LangChain) ----
     judge_enabled: bool = True
-    judge_model: str = "gpt-4o-mini"
+    judge_model: str = "gemini-3.5-flash-lite"
 
     # ---- Privacy ----
     pii_policy: str = "redact"
 
-    # ---- API key ----
-    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+    # ---- API key (reads GEMINI_API_KEY or GOOGLE_API_KEY) ----
+    google_api_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "GEMINI_API_KEY",
+            "GOOGLE_API_KEY",
+            "MEMMCP_GEMINI_API_KEY",
+            "MEMMCP_GOOGLE_API_KEY",
+        ),
+    )
+
+    @property
+    def gemini_api_key(self) -> str | None:
+        return self.google_api_key
 
     @field_validator("data_dir")
     @classmethod

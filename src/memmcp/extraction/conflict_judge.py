@@ -3,7 +3,7 @@
 When two memories land in the similarity grey zone (between the dedup and
 conflict thresholds), cosine distance alone cannot distinguish "same topic,
 compatible facts" from "same topic, contradictory update".  This module
-delegates that decision to a lightweight OpenAI LLM call.
+delegates that decision to a lightweight Gemini LLM call via LangChain.
 
 The judge answers one question: **does the new fact contradict and replace
 the existing fact, or can both coexist?**
@@ -82,7 +82,7 @@ def _parse_judge_response(text: str) -> JudgeResult:
 
 
 class ConflictJudge:
-    """OpenAI-backed judge that resolves ambiguous similarity-zone conflicts.
+    """Gemini-backed judge using LangChain that resolves ambiguous similarity-zone conflicts.
 
     Instantiated once by :class:`~memmcp.memory_manager.MemoryManager` and
     called from :meth:`Distiller.decide` when a candidate falls inside the
@@ -92,13 +92,24 @@ class ConflictJudge:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._model = settings.judge_model
-        self._client = None
+        self._llm = None
 
-    def _get_client(self):
-        if self._client is None:
-            from openai import OpenAI
-            self._client = OpenAI(api_key=self._settings.openai_api_key)
-        return self._client
+    def _get_llm(self):
+        if self._llm is None:
+            try:
+                from langchain_google_genai import ChatGoogleGenerativeAI
+            except ImportError as exc:
+                raise ImportError(
+                    "langchain-google-genai is not installed. Run `pip install langchain-google-genai`."
+                ) from exc
+
+            self._llm = ChatGoogleGenerativeAI(
+                model=self._model,
+                google_api_key=self._settings.google_api_key,
+                temperature=0.0,
+                max_output_tokens=150,
+            )
+        return self._llm
 
     def judge(self, existing_fact: str, new_fact: str) -> JudgeResult:
         """Ask the LLM whether ``new_fact`` contradicts ``existing_fact``.
@@ -112,7 +123,7 @@ class ConflictJudge:
             new_fact=new_fact,
         )
         try:
-            return self._call_openai(prompt)
+            return self._call_gemini(prompt)
         except Exception:
             logger.exception("LLM judge call failed; defaulting to COMPATIBLE.")
             return JudgeResult(
@@ -120,13 +131,22 @@ class ConflictJudge:
                 reason="LLM call failed — defaulting to compatible",
             )
 
-    def _call_openai(self, prompt: str) -> JudgeResult:
-        client = self._get_client()
-        resp = client.chat.completions.create(
-            model=self._model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=150,
-        )
-        text = resp.choices[0].message.content or ""
+    def _call_gemini(self, prompt: str) -> JudgeResult:
+        llm = self._get_llm()
+        resp = llm.invoke(prompt)
+        content = resp.content
+        if isinstance(content, str):
+            text = content
+        elif isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and "text" in item:
+                    parts.append(item["text"])
+                elif isinstance(item, str):
+                    parts.append(item)
+                elif hasattr(item, "text"):
+                    parts.append(str(item.text))
+            text = "".join(parts)
+        else:
+            text = str(content)
         return _parse_judge_response(text)

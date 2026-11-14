@@ -1,11 +1,12 @@
 # ---- Core (required) ----
-mcp>=1.2.0                # Official Model Context Protocol SDK (FastMCP)
-pydantic>=2.6            # Data models & validation
-pydantic-settings>=2.2  # Env-driven configuration
-numpy>=1.26             # Vector math utilities
-python-dotenv>=1.0      # Load .env files
-chromadb>=0.5           # Persistent vector database backend
-openai>=1.30            # OpenAI embeddings + LLM fact extraction
+mcp>=1.2.0,<2.0.0            # Official Model Context Protocol SDK (FastMCP)
+pydantic>=2.6                # Data models & validation
+pydantic-settings>=2.2      # Env-driven configuration
+numpy>=1.26                 # Vector math utilities
+python-dotenv>=1.0          # Load .env files
+chromadb>=0.5               # Persistent vector database backend
+langchain-google-genai>=2.0.0 # LangChain Google GenAI (Gemini) integration
+langchain-core>=0.3.0       # LangChain core abstractions
 
 # ---- Dev / test ----
 pytest>=8.0

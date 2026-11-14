@@ -1,6 +1,6 @@
 """Fact extraction: conversation -> candidate distilled facts.
 
-Uses an OpenAI chat model to extract architecture, modules, workflows,
+Uses a Gemini chat model via LangChain to extract architecture, modules, workflows,
 decisions, domain concepts, and project status from conversations.
 
 All extractors return :class:`ExtractedFact` objects; storage, dedup and
@@ -298,26 +298,48 @@ def _conversation_to_text(conversation: str | list[dict]) -> str:
     return str(conversation)
 
 
-class OpenAIExtractor:
-    """Fact extraction via an OpenAI chat model."""
+def _extract_response_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and "text" in item:
+                parts.append(item["text"])
+            elif isinstance(item, str):
+                parts.append(item)
+            elif hasattr(item, "text"):
+                parts.append(str(item.text))
+        return "".join(parts)
+    return str(content)
+
+
+class GeminiExtractor:
+    """Fact extraction via a Gemini model using LangChain."""
 
     def __init__(self, model: str, api_key: str | None, settings: Settings) -> None:
-        from openai import OpenAI  # lazy import
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+        except ImportError as exc:
+            raise ImportError(
+                "langchain-google-genai is not installed. Run `pip install langchain-google-genai`."
+            ) from exc
 
-        self._client = OpenAI(api_key=api_key)
-        self._model = model
-        self._settings = settings
+        self._llm = ChatGoogleGenerativeAI(
+            model=model,
+            google_api_key=api_key,
+            temperature=settings.extraction_temperature,
+            max_output_tokens=settings.extraction_max_tokens,
+        )
 
     def extract(self, conversation: str | list[dict]) -> list[ExtractedFact]:
         blob = _conversation_to_text(conversation)
-        resp = self._client.chat.completions.create(
-            model=self._model,
-            messages=[{"role": "user", "content": _LLM_PROMPT.format(conversation=blob)}],
-            temperature=self._settings.extraction_temperature,
-        )
-        return _parse_llm_json(resp.choices[0].message.content or "")
+        prompt = _LLM_PROMPT.format(conversation=blob)
+        response = self._llm.invoke(prompt)
+        text = _extract_response_text(response.content)
+        return _parse_llm_json(text)
 
 
-def build_extractor(settings: Settings) -> OpenAIExtractor:
-    """Build the OpenAI fact extractor."""
-    return OpenAIExtractor(settings.extraction_model, settings.openai_api_key, settings)
+def build_extractor(settings: Settings) -> GeminiExtractor:
+    """Build the Gemini fact extractor."""
+    return GeminiExtractor(settings.extraction_model, settings.google_api_key, settings)
