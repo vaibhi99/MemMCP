@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default=Path("./.memmcp_data"))
 
     # ---- Embeddings (Gemini via LangChain) ----
-    embedding_model: str = "gemini-embedding-001"
+    embedding_model: str = "gemini-embedding-2"
     embedding_dim: int = 3072
 
     # ---- Fact extraction (Gemini via LangChain) ----
